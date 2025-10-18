@@ -12,8 +12,8 @@ use twilight_model::application::command::Command;
 use twilight_model::id::Id;
 use twilight_model::user::CurrentUser;
 
+use crate::interactions::ContextCommands;
 use crate::interactions::verifier::Verifier;
-use crate::interactions::{ContextCommandBuilder, ContextCommands};
 
 mod interactions;
 mod routes;
@@ -104,11 +104,7 @@ async fn update_commands(
 fn register_commands() -> ContextCommands<AppState> {
     let mut context_commands = ContextCommands::new();
 
-    context_commands.register(
-        ContextCommandBuilder::new("Add Reminder")
-            .description("Adds a reminder for the current message"),
-        interactions::commands::add_reminder,
-    );
+    context_commands.register("Add To-Do", interactions::commands::add_reminder);
 
     context_commands
 }

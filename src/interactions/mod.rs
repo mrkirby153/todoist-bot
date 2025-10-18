@@ -21,13 +21,7 @@ type AsyncHandler<T> = Box<
 /// Commands that can be used via a context menu.
 #[derive(Default)]
 pub struct ContextCommands<T> {
-    commands: HashMap<ContextCommandBuilder, AsyncHandler<T>>,
-}
-
-#[derive(Hash, Eq, PartialEq, Clone)]
-pub struct ContextCommandBuilder {
-    name: String,
-    description: Option<String>,
+    commands: HashMap<String, AsyncHandler<T>>,
 }
 
 impl<T> ContextCommands<T> {
@@ -37,7 +31,7 @@ impl<T> ContextCommands<T> {
         }
     }
 
-    pub fn register<F, Fut>(&mut self, command: ContextCommandBuilder, handler: F)
+    pub fn register<F, Fut>(&mut self, command: &str, handler: F)
     where
         F: Fn(Arc<Interaction>, Arc<T>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = InteractionResponse> + Send + 'static,
@@ -46,14 +40,11 @@ impl<T> ContextCommands<T> {
             Box::pin(handler(interaction, state))
                 as Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
         });
-        self.commands.insert(command, handler);
+        self.commands.insert(command.to_string(), handler);
     }
 
     pub fn get(&self, name: &str) -> Option<&AsyncHandler<T>> {
-        self.commands
-            .iter()
-            .find(|item| item.0.name == name)
-            .map(|item| item.1)
+        self.commands.get(name)
     }
 }
 
@@ -62,28 +53,7 @@ impl<T> From<&ContextCommands<T>> for Vec<Command> {
         context_commands
             .commands
             .keys()
-            .map(|builder| {
-                let description = if let Some(desc) = &builder.description {
-                    desc.as_str()
-                } else {
-                    ""
-                };
-                CommandBuilder::new(&builder.name, description, CommandType::Message).build()
-            })
+            .map(|name| CommandBuilder::new(name, "", CommandType::Message).build())
             .collect()
-    }
-}
-
-impl ContextCommandBuilder {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            description: None,
-        }
-    }
-
-    pub fn description(mut self, description: &str) -> Self {
-        self.description = Some(description.to_string());
-        self
     }
 }
