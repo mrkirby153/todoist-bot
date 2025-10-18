@@ -3,7 +3,11 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use tracing::debug;
+use tracing::{debug, warn};
+use twilight_model::{
+    application::interaction::InteractionData::ApplicationCommand, channel::message::MessageFlags,
+    http::interaction::InteractionResponseData,
+};
 use twilight_model::{
     application::interaction::{Interaction, InteractionType},
     http::interaction::InteractionResponse,
@@ -55,6 +59,37 @@ pub async fn interaction_callback(
             kind: twilight_model::http::interaction::InteractionResponseType::Pong,
             data: None,
         },
+        InteractionType::ApplicationCommand => {
+            if let Some(ApplicationCommand(command)) = interaction.data {
+                let name = command.name;
+                debug!("Processing application command: {}", name);
+                // state.context_commands.execute(&name, interaction, state)
+                if let Some(_handler) = state.context_commands.get(&name) {
+                    // handler(interaction, state).await
+                    todo!();
+                } else {
+                    warn!("No handler found for command: {}", name);
+                    InteractionResponse {
+                        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                        data: Some(InteractionResponseData{
+                            content: Some(format!("No handler found for command: `{}`", name)),
+                            flags: Some(MessageFlags::EPHEMERAL),
+                            ..InteractionResponseData::default()
+                        })
+                    }
+                }
+            } else {
+                warn!("Unhandled interaction type: {:?}", interaction.data);
+                InteractionResponse {
+                    kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                    data: Some(InteractionResponseData{
+                        content: Some(format!("Unhandled interaction type: `{:?}`", interaction.data)),
+                        flags: Some(MessageFlags::EPHEMERAL),
+                        ..InteractionResponseData::default()
+                    })
+                }
+            }
+        }
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     };
     Ok(Json(resp))

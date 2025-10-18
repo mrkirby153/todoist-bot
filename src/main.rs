@@ -22,6 +22,7 @@ mod routes;
 pub struct AppState {
     verifier: Arc<Verifier>,
     client: Arc<Client>,
+    context_commands: Arc<ContextCommands<AppState>>,
 }
 #[derive(Debug, Error)]
 enum Error {
@@ -42,15 +43,19 @@ async fn main() -> Result<()> {
     let bot_token = env::var("BOT_TOKEN").map_err(|_| Error::MissingBotToken)?;
     let client = Arc::new(Client::new(bot_token));
 
-    let state = AppState { verifier, client };
+    let commands = Arc::new(register_commands());
+
+    let state = AppState {
+        verifier,
+        client,
+        context_commands: commands,
+    };
 
     let user = retrieve_current_user(&state.client).await?;
     info!("Logged in as {}#{}", user.name, user.discriminator);
 
-    let commands = register_commands();
-
     let guild_id = env::var("GUILD_ID").ok();
-    update_commands(&state.client, commands, guild_id).await?;
+    update_commands(&state.client, &state.context_commands, guild_id).await?;
 
     let app = Router::new()
         .route("/_health", get(routes::health))
@@ -69,7 +74,7 @@ async fn retrieve_current_user(client: &Client) -> Result<CurrentUser> {
 
 async fn update_commands(
     client: &Client,
-    context_commands: ContextCommands,
+    context_commands: &ContextCommands<AppState>,
     guild_id: Option<String>,
 ) -> Result<()> {
     let application_id = {
@@ -96,8 +101,8 @@ async fn update_commands(
     Ok(())
 }
 
-fn register_commands() -> ContextCommands {
-    let mut context_commands = ContextCommands::default();
+fn register_commands() -> ContextCommands<AppState> {
+    let mut context_commands = ContextCommands::new();
 
     context_commands.register(
         ContextCommandBuilder::new("Add Reminder")

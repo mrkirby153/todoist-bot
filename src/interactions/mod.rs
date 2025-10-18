@@ -12,14 +12,16 @@ use twilight_util::builder::command::CommandBuilder;
 pub mod commands;
 pub mod verifier;
 
-type AsyncFn = Box<
-    dyn Fn(Interaction) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>> + Send + Sync,
+type AsyncHandler<T> = Box<
+    dyn Fn(Interaction, T) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
+        + Send
+        + Sync,
 >;
 
 /// Commands that can be used via a context menu.
 #[derive(Default)]
-pub struct ContextCommands {
-    commands: HashMap<ContextCommandBuilder, AsyncFn>,
+pub struct ContextCommands<T> {
+    commands: HashMap<ContextCommandBuilder, AsyncHandler<T>>,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone)]
@@ -28,20 +30,26 @@ pub struct ContextCommandBuilder {
     description: Option<String>,
 }
 
-impl ContextCommands {
+impl<T> ContextCommands<T> {
+    pub fn new() -> Self {
+        Self {
+            commands: HashMap::new(),
+        }
+    }
+
     pub fn register<F, Fut>(&mut self, command: ContextCommandBuilder, handler: F)
     where
-        F: Fn(Interaction) -> Fut + Send + Sync + 'static,
+        F: Fn(Interaction, T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = InteractionResponse> + Send + 'static,
     {
-        let handler = Box::new(move |interaction| {
-            Box::pin(handler(interaction))
+        let handler = Box::new(move |interaction, state| {
+            Box::pin(handler(interaction, state))
                 as Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
         });
         self.commands.insert(command, handler);
     }
 
-    pub fn get(&self, name: &str) -> Option<&AsyncFn> {
+    pub fn get(&self, name: &str) -> Option<&AsyncHandler<T>> {
         self.commands
             .iter()
             .find(|item| item.0.name == name)
@@ -52,17 +60,18 @@ impl ContextCommands {
         &self,
         name: &str,
         interaction: Interaction,
+        state: T,
     ) -> Option<InteractionResponse> {
         if let Some(f) = self.get(name) {
-            Some((f)(interaction).await)
+            Some((f)(interaction, state).await)
         } else {
             None
         }
     }
 }
 
-impl From<ContextCommands> for Vec<Command> {
-    fn from(context_commands: ContextCommands) -> Vec<Command> {
+impl<T> From<&ContextCommands<T>> for Vec<Command> {
+    fn from(context_commands: &ContextCommands<T>) -> Vec<Command> {
         context_commands
             .commands
             .keys()
