@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Json,
     extract::State,
@@ -51,8 +53,8 @@ pub async fn interaction_callback(
     }
     debug!("Signature verified");
 
-    let interaction: Interaction =
-        serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let interaction: Arc<Interaction> =
+        Arc::new(serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?);
 
     let resp = match interaction.kind {
         InteractionType::Ping => InteractionResponse {
@@ -60,13 +62,11 @@ pub async fn interaction_callback(
             data: None,
         },
         InteractionType::ApplicationCommand => {
-            if let Some(ApplicationCommand(command)) = interaction.data {
-                let name = command.name;
+            if let Some(ApplicationCommand(ref command)) = interaction.data {
+                let name = &command.name;
                 debug!("Processing application command: {}", name);
-                // state.context_commands.execute(&name, interaction, state)
-                if let Some(_handler) = state.context_commands.get(&name) {
-                    // handler(interaction, state).await
-                    todo!();
+                if let Some(handler) = state.context_commands.get(name) {
+                    handler(Arc::clone(&interaction), Arc::new(state.clone())).await
                 } else {
                     warn!("No handler found for command: {}", name);
                     InteractionResponse {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, pin::Pin};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use twilight_model::{
     application::{
@@ -13,7 +13,7 @@ pub mod commands;
 pub mod verifier;
 
 type AsyncHandler<T> = Box<
-    dyn Fn(Interaction, T) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
+    dyn Fn(Arc<Interaction>, Arc<T>) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
         + Send
         + Sync,
 >;
@@ -39,7 +39,7 @@ impl<T> ContextCommands<T> {
 
     pub fn register<F, Fut>(&mut self, command: ContextCommandBuilder, handler: F)
     where
-        F: Fn(Interaction, T) -> Fut + Send + Sync + 'static,
+        F: Fn(Arc<Interaction>, Arc<T>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = InteractionResponse> + Send + 'static,
     {
         let handler = Box::new(move |interaction, state| {
@@ -54,19 +54,6 @@ impl<T> ContextCommands<T> {
             .iter()
             .find(|item| item.0.name == name)
             .map(|item| item.1)
-    }
-
-    pub async fn execute(
-        &self,
-        name: &str,
-        interaction: Interaction,
-        state: T,
-    ) -> Option<InteractionResponse> {
-        if let Some(f) = self.get(name) {
-            Some((f)(interaction, state).await)
-        } else {
-            None
-        }
     }
 }
 
