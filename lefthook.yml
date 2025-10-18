@@ -1,0 +1,9 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - run: cargo fmt -- {staged_files}
+      glob: "*.rs"
+      stage_fixed: true
+
+    - run: cargo clippy -- -D warnings
+      glob: "*.rs"
