@@ -17,6 +17,7 @@ use crate::interactions::verifier::Verifier;
 
 mod interactions;
 mod routes;
+mod todoist;
 
 #[derive(Clone)]
 pub struct AppState {
