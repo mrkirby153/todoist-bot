@@ -21,33 +21,37 @@ pub struct CommandOption {
 }
 
 // Trait for type-erased async handlers
-trait AsyncHandler: Send + Sync {
+trait AsyncHandler<S>: Send + Sync {
     fn handle(
         &self,
         interaction: Arc<Interaction>,
-        state: Arc<AppState>,
+        state: Arc<S>,
     ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>;
 }
 
 // Concrete implementation that preserves command type
-struct TypedAsyncHandler<C: Command, F, Fut>
+struct TypedAsyncHandler<C, S, F, Fut>
 where
-    F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync,
+    C: Command,
+    F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync,
     Fut: Future<Output = InteractionResponse> + Send + 'static,
+    S: Send + Sync + 'static,
 {
     handler: F,
-    _phantom: std::marker::PhantomData<C>,
+    _phantom: std::marker::PhantomData<(C, S)>,
 }
 
-impl<C: Command, F, Fut> AsyncHandler for TypedAsyncHandler<C, F, Fut>
+impl<C: Command, S, F, Fut> AsyncHandler<S> for TypedAsyncHandler<C, S, F, Fut>
 where
-    F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync,
+    C: Command,
+    S: Send + Sync + 'static,
+    F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync,
     Fut: Future<Output = InteractionResponse> + Send + 'static,
 {
     fn handle(
         &self,
         interaction: Arc<Interaction>,
-        state: Arc<AppState>,
+        state: Arc<S>,
     ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>> {
         let command_data = C::from_interaction_data(
             interaction
@@ -61,11 +65,17 @@ where
     }
 }
 
-pub struct CommandExecutor {
-    commands: HashMap<String, Box<dyn AsyncHandler>>,
+pub struct CommandExecutor<S>
+where
+    S: Send + Sync + 'static,
+{
+    commands: HashMap<String, Box<dyn AsyncHandler<S>>>,
 }
 
-impl CommandExecutor {
+impl<S> CommandExecutor<S>
+where
+    S: Send + Sync + 'static,
+{
     pub fn new() -> Self {
         Self {
             commands: HashMap::new(),
@@ -76,7 +86,7 @@ impl CommandExecutor {
     pub fn register<C, F, Fut>(&mut self, name: &str, handler: F)
     where
         C: Command,
-        F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync + 'static,
+        F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = InteractionResponse> + Send + 'static,
     {
         let handler = TypedAsyncHandler {
@@ -91,7 +101,7 @@ impl CommandExecutor {
         &self,
         name: &str,
         interaction: Arc<Interaction>,
-        state: Arc<AppState>,
+        state: Arc<S>,
     ) -> Option<InteractionResponse> {
         let handler = self.commands.get(name)?;
         Some(handler.handle(interaction, state).await)
