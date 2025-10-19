@@ -6,6 +6,7 @@ use twilight_model::{
         interaction::Interaction,
     },
     http::interaction::InteractionResponse,
+    oauth::ApplicationIntegrationType,
 };
 use twilight_util::builder::command::CommandBuilder;
 
@@ -53,7 +54,14 @@ impl<T> From<&ContextCommands<T>> for Vec<Command> {
         context_commands
             .commands
             .keys()
-            .map(|name| CommandBuilder::new(name, "", CommandType::Message).build())
+            .map(|name| {
+                CommandBuilder::new(name, "", CommandType::Message)
+                    .integration_types([
+                        ApplicationIntegrationType::UserInstall,
+                        ApplicationIntegrationType::GuildInstall,
+                    ])
+                    .build()
+            })
             .collect()
     }
 }
