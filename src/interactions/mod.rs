@@ -10,6 +10,7 @@ use twilight_model::{
 };
 use twilight_util::builder::command::CommandBuilder;
 
+pub mod command_handlers;
 pub mod commands;
 pub mod verifier;
 

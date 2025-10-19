@@ -13,6 +13,7 @@ use twilight_model::id::Id;
 use twilight_model::user::CurrentUser;
 
 use crate::interactions::ContextCommands;
+use crate::interactions::commands::CommandExecutor;
 use crate::interactions::verifier::Verifier;
 
 mod interactions;
@@ -105,7 +106,10 @@ async fn update_commands(
 fn register_commands() -> ContextCommands<AppState> {
     let mut context_commands = ContextCommands::new();
 
-    context_commands.register("Add To-Do", interactions::commands::add_reminder);
+    context_commands.register("Add To-Do", interactions::command_handlers::add_reminder);
+
+    let mut command_executor = CommandExecutor::new();
+    command_executor.register("testing", interactions::command_handlers::test_command);
 
     context_commands
 }
