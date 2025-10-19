@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use twilight_model::{
     application::interaction::{Interaction, InteractionData},
@@ -7,26 +7,62 @@ use twilight_model::{
 
 use crate::AppState;
 
-pub trait Command {
+pub trait Command: Send + Sync + 'static {
     fn options() -> Vec<CommandOption>;
-
     fn from_interaction_data(data: &InteractionData) -> Self;
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CommandOption {
     pub name: &'static str,
     pub description: &'static str,
     pub required: bool,
 }
 
-type CommandHandler<C> = fn(C, Arc<Interaction>, Arc<AppState>) -> InteractionResponse;
+// Trait for type-erased async handlers
+trait AsyncHandler: Send + Sync {
+    fn handle(
+        &self,
+        interaction: Arc<Interaction>,
+        state: Arc<AppState>,
+    ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>;
+}
+
+// Concrete implementation that preserves command type
+struct TypedAsyncHandler<C: Command, F, Fut>
+where
+    F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync,
+    Fut: Future<Output = InteractionResponse> + Send + 'static,
+{
+    handler: F,
+    _phantom: std::marker::PhantomData<C>,
+}
+
+impl<C: Command, F, Fut> AsyncHandler for TypedAsyncHandler<C, F, Fut>
+where
+    F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync,
+    Fut: Future<Output = InteractionResponse> + Send + 'static,
+{
+    fn handle(
+        &self,
+        interaction: Arc<Interaction>,
+        state: Arc<AppState>,
+    ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>> {
+        let command_data = C::from_interaction_data(
+            interaction
+                .data
+                .as_ref()
+                .expect("Interaction data should be present"),
+        );
+
+        let fut = (self.handler)(command_data, Arc::clone(&interaction), state);
+        Box::pin(fut)
+    }
+}
 
 pub struct CommandExecutor {
-    commands: HashMap<
-        String,
-        Box<dyn Fn(Arc<Interaction>, Arc<AppState>) -> InteractionResponse + Send + Sync>,
-    >,
+    commands: HashMap<String, Box<dyn AsyncHandler>>,
 }
 
 impl CommandExecutor {
@@ -36,18 +72,28 @@ impl CommandExecutor {
         }
     }
 
-    pub fn register<C: Command + 'static>(&mut self, name: &str, executor: CommandHandler<C>) {
-        self.commands.insert(
-            name.to_string(),
-            Box::new(move |interaction: Arc<Interaction>, state: Arc<AppState>| {
-                let command_data = C::from_interaction_data(
-                    interaction
-                        .data
-                        .as_ref()
-                        .expect("Interaction data should be present"),
-                );
-                executor(command_data, interaction, state)
-            }),
-        );
+    /// Register an async command handler
+    pub fn register<C, F, Fut>(&mut self, name: &str, handler: F)
+    where
+        C: Command,
+        F: Fn(C, Arc<Interaction>, Arc<AppState>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = InteractionResponse> + Send + 'static,
+    {
+        let handler = TypedAsyncHandler {
+            handler,
+            _phantom: std::marker::PhantomData,
+        };
+
+        self.commands.insert(name.to_string(), Box::new(handler));
+    }
+
+    pub async fn execute(
+        &self,
+        name: &str,
+        interaction: Arc<Interaction>,
+        state: Arc<AppState>,
+    ) -> Option<InteractionResponse> {
+        let handler = self.commands.get(name)?;
+        Some(handler.handle(interaction, state).await)
     }
 }

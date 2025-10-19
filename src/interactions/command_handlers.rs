@@ -32,7 +32,7 @@ pub struct TestCommand {
     option_two: Option<i32>,
 }
 
-pub fn test_command(
+pub async fn test_command(
     _command: TestCommand,
     _interaction: Arc<Interaction>,
     _state: Arc<AppState>,
