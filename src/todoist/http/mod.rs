@@ -5,6 +5,8 @@ use reqwest::Client;
 
 const TODOIST_API_BASE_URL: &str = "https://api.todoist.com/api/v1";
 
+pub mod models;
+
 #[derive(Debug)]
 pub struct TodoistHttpClient {
     client: reqwest::Client,
