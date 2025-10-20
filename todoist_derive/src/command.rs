@@ -41,13 +41,19 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             let default_description = "".to_string();
             let description = field.description.as_ref().unwrap_or(&default_description);
-            let required = !is_option_type(&field.ty);
-            Ok(quote! {
-                crate::interactions::commands::CommandOption {
-                    name: #name,
-                    description: #description,
-                    required: #required,
+            let ty = &field.ty;
+            let ty = if is_option_type(ty) {
+                let inner_type = get_inner_option_type(ty).unwrap();
+                quote! {
+                    Option::<#inner_type>
                 }
+            } else {
+                quote! {
+                    #ty
+                }
+            };
+            Ok(quote! {
+                #ty::to_option().name(#name).description(#description)
             })
         })
         .collect();
@@ -81,7 +87,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     quote! {
         #[automatically_derived]
         impl crate::interactions::commands::Command for #ident {
-            fn options() -> Vec<crate::interactions::commands::CommandOption> {
+            fn options() -> Vec<crate::interactions::commands::arguments::CommandOption> {
+                use crate::interactions::commands::arguments::ToOption;
                 vec![
                     #(#options),*
                 ]
@@ -113,6 +120,18 @@ fn is_option_type(ty: &syn::Type) -> bool {
         return segment.ident == "Option";
     }
     false
+}
+
+fn get_inner_option_type(ty: &syn::Type) -> Option<&syn::Type> {
+    if let syn::Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Option"
+        && let syn::PathArguments::AngleBracketed(angle_bracketed) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first()
+    {
+        return Some(inner_type);
+    }
+    None
 }
 
 fn get_name(field: &OptionReceiver) -> Result<String, darling::Error> {

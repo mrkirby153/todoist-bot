@@ -1,5 +1,6 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
+use crate::interactions::commands::arguments::CommandOption;
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::{
     application::interaction::{Interaction, InteractionData},
@@ -10,14 +11,6 @@ pub mod arguments;
 pub trait Command: Send + Sync + 'static + Sized {
     fn options() -> Vec<CommandOption>;
     fn from_interaction_data(data: &InteractionData) -> Result<Self, arguments::Error>;
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct CommandOption {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub required: bool,
 }
 
 // Trait for type-erased async handlers
@@ -81,11 +74,15 @@ where
     }
 }
 
+struct CommandInfo<S>(Box<dyn AsyncHandler<S>>, Vec<CommandOption>)
+where
+    S: Send + Sync + 'static;
+
 pub struct CommandExecutor<S>
 where
     S: Send + Sync + 'static,
 {
-    commands: HashMap<String, Box<dyn AsyncHandler<S>>>,
+    commands: HashMap<String, CommandInfo<S>>,
 }
 
 impl<S> CommandExecutor<S>
@@ -110,7 +107,10 @@ where
             _phantom: std::marker::PhantomData,
         };
 
-        self.commands.insert(name.to_string(), Box::new(handler));
+        self.commands.insert(
+            name.to_string(),
+            CommandInfo(Box::new(handler), C::options()),
+        );
     }
 
     pub async fn execute(
@@ -120,6 +120,6 @@ where
         state: Arc<S>,
     ) -> Option<InteractionResponse> {
         let handler = self.commands.get(name)?;
-        Some(handler.handle(interaction, state).await)
+        Some(handler.0.handle(interaction, state).await)
     }
 }
