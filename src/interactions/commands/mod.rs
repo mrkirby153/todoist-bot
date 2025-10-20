@@ -1,11 +1,13 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use crate::interactions::commands::arguments::CommandOption;
+use twilight_model::application::command::Command as TwilightCommand;
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::{
     application::interaction::{Interaction, InteractionData},
     http::interaction::{InteractionResponse, InteractionResponseData},
 };
+use twilight_util::builder::command::CommandBuilder;
 pub mod arguments;
 
 pub trait Command: Send + Sync + 'static + Sized {
@@ -121,5 +123,22 @@ where
     ) -> Option<InteractionResponse> {
         let handler = self.commands.get(name)?;
         Some(handler.0.handle(interaction, state).await)
+    }
+
+    pub fn build_commands(&self) -> Vec<TwilightCommand> {
+        self.commands
+            .iter()
+            .map(|(name, info)| {
+                let mut command = CommandBuilder::new(
+                    name,
+                    "No description provided",
+                    twilight_model::application::command::CommandType::ChatInput,
+                );
+                for option in &info.1 {
+                    command = command.option(option.clone());
+                }
+                command.build()
+            })
+            .collect()
     }
 }

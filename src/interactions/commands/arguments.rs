@@ -35,7 +35,7 @@ pub struct CommandOption {
     pub max_value: Option<InteractionCommandOptionValue>,
     pub min_length: Option<u16>,
     pub min_value: Option<InteractionCommandOptionValue>,
-    pub required: Option<bool>,
+    pub required: bool,
 }
 
 pub trait ToOption {
@@ -90,7 +90,7 @@ impl CommandOption {
             max_value: None,
             min_length: None,
             min_value: None,
-            required: None,
+            required: true,
         }
     }
 
@@ -130,7 +130,7 @@ impl CommandOption {
     }
 
     pub fn required(mut self, required: bool) -> Self {
-        self.required = Some(required);
+        self.required = required;
         self
     }
 
@@ -171,7 +171,7 @@ impl From<CommandOption> for twilight_model::application::command::CommandOption
             max_value: option.max_value,
             min_length: option.min_length,
             min_value: option.min_value,
-            required: option.required,
+            required: Some(option.required),
             description_localizations: None,
             name_localizations: None,
             options: None,

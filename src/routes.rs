@@ -65,7 +65,14 @@ pub async fn interaction_callback(
             if let Some(ApplicationCommand(ref command)) = interaction.data {
                 let name = &command.name;
                 debug!("Processing application command: {}", name);
-                if let Some(handler) = state.context_commands.get(name) {
+
+                let slash_command_result = state
+                    .slash_commands
+                    .execute(name, Arc::clone(&interaction), Arc::new(state.clone()))
+                    .await;
+                if let Some(response) = slash_command_result {
+                    response
+                } else if let Some(handler) = state.context_commands.get(name) {
                     handler(Arc::clone(&interaction), Arc::new(state.clone())).await
                 } else {
                     warn!("No handler found for command: {}", name);

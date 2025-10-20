@@ -25,6 +25,7 @@ pub struct AppState {
     verifier: Arc<Verifier>,
     client: Arc<Client>,
     context_commands: Arc<ContextCommands<AppState>>,
+    slash_commands: Arc<CommandExecutor<AppState>>,
 }
 #[derive(Debug, Error)]
 enum Error {
@@ -45,19 +46,28 @@ async fn main() -> Result<()> {
     let bot_token = env::var("BOT_TOKEN").map_err(|_| Error::MissingBotToken)?;
     let client = Arc::new(Client::new(bot_token));
 
-    let commands = Arc::new(register_commands());
+    let (context_commands, slash_commands) = register_commands();
+    let context_commands = Arc::new(context_commands);
+    let slash_commands = Arc::new(slash_commands);
 
     let state = AppState {
         verifier,
         client,
-        context_commands: commands,
+        context_commands,
+        slash_commands,
     };
 
     let user = retrieve_current_user(&state.client).await?;
     info!("Logged in as {}#{}", user.name, user.discriminator);
 
     let guild_id = env::var("GUILD_ID").ok();
-    update_commands(&state.client, &state.context_commands, guild_id).await?;
+    update_commands(
+        &state.client,
+        &state.context_commands,
+        &state.slash_commands,
+        guild_id,
+    )
+    .await?;
 
     let app = Router::new()
         .route("/_health", get(routes::health))
@@ -77,6 +87,7 @@ async fn retrieve_current_user(client: &Client) -> Result<CurrentUser> {
 async fn update_commands(
     client: &Client,
     context_commands: &ContextCommands<AppState>,
+    slash_commands: &CommandExecutor<AppState>,
     guild_id: Option<String>,
 ) -> Result<()> {
     let application_id = {
@@ -85,17 +96,17 @@ async fn update_commands(
     };
 
     let client = client.interaction(application_id);
+    let mut commands: Vec<Command> = context_commands.into();
+    commands.append(&mut slash_commands.build_commands());
 
     match guild_id {
         Some(guild_id) => {
             info!("Updating guild commands for guild ID {}", guild_id);
             let guild_id = Id::new(guild_id.parse::<u64>()?);
-            let commands: Vec<Command> = context_commands.into();
             client.set_guild_commands(guild_id, &commands).await?;
         }
         None => {
             info!("Updating global commands");
-            let commands: Vec<Command> = context_commands.into();
             client.set_global_commands(&commands).await?;
         }
     }
@@ -103,7 +114,7 @@ async fn update_commands(
     Ok(())
 }
 
-fn register_commands() -> ContextCommands<AppState> {
+fn register_commands() -> (ContextCommands<AppState>, CommandExecutor<AppState>) {
     let mut context_commands = ContextCommands::new();
 
     context_commands.register("Add To-Do", interactions::command_handlers::add_reminder);
@@ -111,5 +122,5 @@ fn register_commands() -> ContextCommands<AppState> {
     let mut command_executor = CommandExecutor::new();
     command_executor.register("testing", interactions::command_handlers::test_command);
 
-    context_commands
+    (context_commands, command_executor)
 }
