@@ -11,6 +11,9 @@ use syn::parse_macro_input;
 struct CommandReceiver {
     ident: syn::Ident,
     data: Data<(), OptionReceiver>,
+    name: String,
+    #[darling(default)]
+    description: Option<String>,
 }
 
 #[derive(Debug, FromField)]
@@ -84,6 +87,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let description = if let Some(desc) = &receiver.description {
+        desc.as_str()
+    } else {
+        "No description provided"
+    };
+
+    let command_name = &receiver.name;
+
     quote! {
         #[automatically_derived]
         impl crate::interactions::commands::Command for #ident {
@@ -92,6 +103,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 vec![
                     #(#options),*
                 ]
+            }
+            fn name() -> &'static str {
+                #command_name
+            }
+            fn description() -> &'static str {
+                #description
             }
             fn from_interaction_data(data: &::twilight_model::application::interaction::InteractionData) -> Result<Self, crate::interactions::commands::arguments::Error> {
                 if let ::twilight_model::application::interaction::InteractionData::ApplicationCommand(command_data) = data {

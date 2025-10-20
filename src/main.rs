@@ -120,7 +120,7 @@ fn register_commands() -> (ContextCommands<AppState>, CommandExecutor<AppState>)
     context_commands.register("Add To-Do", interactions::command_handlers::add_reminder);
 
     let mut command_executor = CommandExecutor::new();
-    command_executor.register("testing", interactions::command_handlers::test_command);
+    command_executor.register(interactions::command_handlers::test_command);
 
     (context_commands, command_executor)
 }

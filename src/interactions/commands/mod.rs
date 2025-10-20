@@ -13,6 +13,8 @@ pub mod arguments;
 pub trait Command: Send + Sync + 'static + Sized {
     fn options() -> Vec<CommandOption>;
     fn from_interaction_data(data: &InteractionData) -> Result<Self, arguments::Error>;
+    fn description() -> &'static str;
+    fn name() -> &'static str;
 }
 
 // Trait for type-erased async handlers
@@ -76,7 +78,7 @@ where
     }
 }
 
-struct CommandInfo<S>(Box<dyn AsyncHandler<S>>, Vec<CommandOption>)
+struct CommandInfo<S>(Box<dyn AsyncHandler<S>>, Vec<CommandOption>, &'static str)
 where
     S: Send + Sync + 'static;
 
@@ -98,7 +100,7 @@ where
     }
 
     /// Register an async command handler
-    pub fn register<C, F, Fut>(&mut self, name: &str, handler: F)
+    pub fn register<C, F, Fut>(&mut self, handler: F)
     where
         C: Command,
         F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync + 'static,
@@ -110,8 +112,8 @@ where
         };
 
         self.commands.insert(
-            name.to_string(),
-            CommandInfo(Box::new(handler), C::options()),
+            C::name().to_string(),
+            CommandInfo(Box::new(handler), C::options(), C::description()),
         );
     }
 
@@ -131,7 +133,7 @@ where
             .map(|(name, info)| {
                 let mut command = CommandBuilder::new(
                     name,
-                    "No description provided",
+                    info.2,
                     twilight_model::application::command::CommandType::ChatInput,
                 );
                 for option in &info.1 {

@@ -24,7 +24,7 @@ pub async fn add_reminder(
 }
 
 #[derive(Command)]
-
+#[command(name = "testing", description = "A test command")]
 pub struct TestCommand {
     #[option(description = "The first option")]
     option_one: String,
