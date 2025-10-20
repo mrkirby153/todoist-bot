@@ -3,6 +3,7 @@ use darling::FromField;
 use darling::ast::Data;
 use proc_macro::TokenStream;
 use quote::quote;
+use syn::Ident;
 use syn::parse_macro_input;
 
 #[derive(Debug, FromDeriveInput)]
@@ -32,52 +33,73 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let fields = receiver.data.take_struct().unwrap().fields;
 
-    let fields = fields
+    let options_raw: Result<_, darling::Error> = fields
         .iter()
         .map(|field| {
-            let field_name = field.ident.as_ref();
-            let field_name_override = field.name.as_ref();
-
             // Assert that either field_name_override or field_name is Some
-            let name = if let Some(name) = field_name_override {
-                name.clone()
-            } else if let Some(ident) = field_name {
-                ident.to_string()
-            } else {
-                return Err(darling::Error::custom("Field must have a name"));
-            };
+            let name = get_name(field)?;
 
             let default_description = "".to_string();
             let description = field.description.as_ref().unwrap_or(&default_description);
             let required = !is_option_type(&field.ty);
-
             Ok(quote! {
                 crate::interactions::commands::CommandOption {
-                    name: stringify!(#name),
-                    description: stringify!(#description),
+                    name: #name,
+                    description: #description,
                     required: #required,
                 }
             })
         })
         .collect();
 
-    let fields: Vec<proc_macro2::TokenStream> = match fields {
+    let options: Vec<proc_macro2::TokenStream> = match options_raw {
         Ok(tokens) => tokens,
         Err(err) => return TokenStream::from(err.write_errors()),
     };
 
+    let field_names: Result<Vec<(String, Ident)>, darling::Error> = fields
+        .iter()
+        .map(|field| {
+            let name = get_name(field)?;
+            let ident = field.ident.as_ref().unwrap().clone();
+            Ok((name, ident))
+        })
+        .collect();
+    let field_names = match field_names {
+        Ok(names) => names,
+        Err(err) => return TokenStream::from(err.write_errors()),
+    };
+
     let ident = receiver.ident;
+
+    let struct_fields = field_names.iter().map(|(name, field_ident)| {
+        quote! {
+            #field_ident: crate::interactions::commands::arguments::parse(&options_map, #name)?
+        }
+    });
 
     quote! {
         #[automatically_derived]
         impl crate::interactions::commands::Command for #ident {
             fn options() -> Vec<crate::interactions::commands::CommandOption> {
                 vec![
-                    #(#fields),*
+                    #(#options),*
                 ]
             }
-            fn from_interaction_data(data: &::twilight_model::application::interaction::InteractionData) -> Self {
-                todo!("Not yet implemented")
+            fn from_interaction_data(data: &::twilight_model::application::interaction::InteractionData) -> Result<Self, crate::interactions::commands::arguments::Error> {
+                if let ::twilight_model::application::interaction::InteractionData::ApplicationCommand(command_data) = data {
+                    let options_map = command_data
+                        .options
+                        .iter()
+                        .map(|opt| (opt.name.clone(), opt.value.clone()))
+                        .collect::<::std::collections::HashMap<_, _>>();
+
+                    Ok(Self {
+                        #(#struct_fields,)*
+                    })
+                } else {
+                    Err(crate::interactions::commands::arguments::Error::InvalidType)
+                }
             }
         }
     }
@@ -91,4 +113,14 @@ fn is_option_type(ty: &syn::Type) -> bool {
         return segment.ident == "Option";
     }
     false
+}
+
+fn get_name(field: &OptionReceiver) -> Result<String, darling::Error> {
+    if let Some(name) = &field.name {
+        Ok(name.clone())
+    } else if let Some(ident) = &field.ident {
+        Ok(ident.to_string())
+    } else {
+        Err(darling::Error::custom("Field must have a name"))
+    }
 }
