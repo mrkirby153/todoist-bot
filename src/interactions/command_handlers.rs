@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::AppState;
+use todoist_derive::Choices;
 use todoist_derive::Command;
 use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::http::interaction::InteractionResponseType;
@@ -28,12 +29,22 @@ pub async fn add_reminder(
 pub struct TestCommand {
     #[option(description = "The first option")]
     option_one: String,
+    #[option(description = "This is a select")]
+    choice: TestEnum,
     #[option(description = "The second option")]
     option_two: Option<i32>,
 }
 
+#[derive(Choices, Debug)]
+enum TestEnum {
+    #[choice(value = "1")]
+    One,
+    #[choice(name = "Three", value = "2")]
+    Two,
+}
+
 pub async fn test_command(
-    _command: TestCommand,
+    command: TestCommand,
     _interaction: Arc<Interaction>,
     _state: Arc<AppState>,
 ) -> InteractionResponse {
@@ -41,8 +52,8 @@ pub async fn test_command(
         kind: InteractionResponseType::ChannelMessageWithSource,
         data: Some(InteractionResponseData {
             content: Some(format!(
-                "Received option_one: {}, option_two: {:?}",
-                _command.option_one, _command.option_two
+                "Received option_one: {}, option_two: {:?}, choice: {:?}",
+                command.option_one, command.option_two, command.choice
             )),
             flags: Some(MessageFlags::EPHEMERAL),
             ..Default::default()

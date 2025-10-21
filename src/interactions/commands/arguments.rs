@@ -104,6 +104,14 @@ impl CommandOption {
         self
     }
 
+    pub fn channel_type(mut self, channel_type: ChannelType) -> Self {
+        match &mut self.channel_types {
+            Some(types) => types.push(channel_type),
+            None => self.channel_types = Some(vec![channel_type]),
+        }
+        self
+    }
+
     pub fn choices(mut self, choices: Vec<CommandOptionChoice>) -> Self {
         self.choices = Some(choices);
         self
