@@ -93,6 +93,7 @@ pub fn derive(tokens: TokenStream) -> TokenStream {
     });
 
     quote! {
+        #[automatically_derived]
         impl crate::interactions::commands::arguments::ToOption for #enum_name {
             fn to_option() -> crate::interactions::commands::arguments::CommandOption {
                 crate::interactions::commands::arguments::CommandOption::new(
@@ -103,6 +104,7 @@ pub fn derive(tokens: TokenStream) -> TokenStream {
             }
         }
 
+        #[automatically_derived]
         impl crate::interactions::commands::arguments::ArgumentConverter for #enum_name {
             type Error = crate::interactions::commands::arguments::Error;
 
