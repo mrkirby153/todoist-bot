@@ -121,6 +121,12 @@ fn register_commands() -> (ContextCommands<AppState>, CommandExecutor<AppState>)
 
     let mut command_executor = CommandExecutor::new();
     command_executor.register(interactions::command_handlers::test_command);
+    command_executor.register(interactions::command_handlers::subcommand1_handler);
+    command_executor.register(interactions::command_handlers::subcommand2_handler);
+    command_executor.register(interactions::command_handlers::subcommand_group1_handler);
+    command_executor.register(interactions::command_handlers::subcommand_group2_handler);
+    command_executor.register(interactions::command_handlers::subcommand_group3_handler);
+    command_executor.register(interactions::command_handlers::test_command_no_arguments);
 
     (context_commands, command_executor)
 }

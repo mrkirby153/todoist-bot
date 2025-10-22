@@ -1,18 +1,24 @@
+use core::panic;
+use std::fmt::Debug;
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use crate::interactions::commands::arguments::CommandOption;
+use tracing::debug;
 use twilight_model::application::command::Command as TwilightCommand;
+use twilight_model::application::interaction::application_command::{
+    CommandData, CommandDataOption, CommandOptionValue,
+};
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::{
-    application::interaction::{Interaction, InteractionData},
+    application::interaction::Interaction,
     http::interaction::{InteractionResponse, InteractionResponseData},
 };
-use twilight_util::builder::command::CommandBuilder;
+use twilight_util::builder::command::{CommandBuilder, SubCommandBuilder, SubCommandGroupBuilder};
 pub mod arguments;
 
 pub trait Command: Send + Sync + 'static + Sized {
     fn options() -> Vec<CommandOption>;
-    fn from_interaction_data(data: &InteractionData) -> Result<Self, arguments::Error>;
+    fn from_command_data(data: Vec<CommandDataOption>) -> Result<Self, arguments::Error>;
     fn description() -> &'static str;
     fn name() -> &'static str;
 }
@@ -22,6 +28,7 @@ trait AsyncHandler<S>: Send + Sync {
     fn handle(
         &self,
         interaction: Arc<Interaction>,
+        interaction_data: Vec<CommandDataOption>,
         state: Arc<S>,
     ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>;
 }
@@ -48,14 +55,10 @@ where
     fn handle(
         &self,
         interaction: Arc<Interaction>,
+        options: Vec<CommandDataOption>,
         state: Arc<S>,
     ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>> {
-        let command_data = C::from_interaction_data(
-            interaction
-                .data
-                .as_ref()
-                .expect("Interaction data should be present"),
-        );
+        let command_data = C::from_command_data(options);
 
         let command_data = match command_data {
             Ok(data) => data,
@@ -82,11 +85,87 @@ struct CommandInfo<S>(Box<dyn AsyncHandler<S>>, Vec<CommandOption>, &'static str
 where
     S: Send + Sync + 'static;
 
+enum CommandTree<S>
+where
+    S: Send + Sync + 'static,
+{
+    Node(HashMap<String, CommandTree<S>>),
+    Leaf(CommandInfo<S>),
+}
+
+impl<S> CommandTree<S>
+where
+    S: Send + Sync + 'static,
+{
+    fn new() -> Self {
+        CommandTree::Node(HashMap::new())
+    }
+
+    fn insert(&mut self, path: &[String], info: CommandInfo<S>) {
+        match self {
+            CommandTree::Node(children) => {
+                if path.is_empty() {
+                    return;
+                }
+                let key = &path[0];
+                if path.len() == 1 {
+                    children.insert(key.clone(), CommandTree::Leaf(info));
+                } else {
+                    let child = children.entry(key.clone()).or_insert_with(CommandTree::new);
+                    child.insert(&path[1..], info);
+                }
+            }
+            CommandTree::Leaf(_) => {
+                panic!("Cannot insert into a leaf node");
+            }
+        }
+    }
+
+    fn get(&self, path: &[String]) -> Option<&CommandInfo<S>> {
+        match self {
+            CommandTree::Node(children) => {
+                if path.is_empty() {
+                    return None;
+                }
+                let key = &path[0];
+                let child = children.get(key)?;
+                if path.len() == 1 {
+                    match child {
+                        CommandTree::Leaf(info) => Some(info),
+                        CommandTree::Node(_) => None,
+                    }
+                } else {
+                    child.get(&path[1..])
+                }
+            }
+            CommandTree::Leaf(_) => None,
+        }
+    }
+}
+
+impl<S> Debug for CommandTree<S>
+where
+    S: Send + Sync + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandTree::Node(children) => {
+                write!(f, "Node {{ ")?;
+                for (key, child) in children {
+                    write!(f, "{}: {:?}, ", key, child)?;
+                }
+                write!(f, "}}")
+            }
+            CommandTree::Leaf(_) => write!(f, "Leaf"),
+        }
+    }
+}
+
 pub struct CommandExecutor<S>
 where
     S: Send + Sync + 'static,
 {
-    commands: HashMap<String, CommandInfo<S>>,
+    commands: CommandTree<S>,
 }
 
 impl<S> CommandExecutor<S>
@@ -95,7 +174,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            commands: HashMap::new(),
+            commands: CommandTree::new(),
         }
     }
 
@@ -111,36 +190,136 @@ where
             _phantom: std::marker::PhantomData,
         };
 
-        self.commands.insert(
-            C::name().to_string(),
-            CommandInfo(Box::new(handler), C::options(), C::description()),
-        );
+        let name = C::name().to_string();
+        let command_info = CommandInfo(Box::new(handler), C::options(), C::description());
+
+        let path = name.split(' ').map(String::from).collect::<Vec<_>>();
+        self.commands.insert(&path, command_info);
     }
 
     pub async fn execute(
         &self,
         name: &str,
         interaction: Arc<Interaction>,
+        options: Vec<CommandDataOption>,
         state: Arc<S>,
     ) -> Option<InteractionResponse> {
-        let handler = self.commands.get(name)?;
-        Some(handler.0.handle(interaction, state).await)
+        let path = name.split(' ').map(String::from).collect::<Vec<_>>();
+        let handler = self.commands.get(&path)?;
+        Some(handler.0.handle(interaction, options, state).await)
     }
 
     pub fn build_commands(&self) -> Vec<TwilightCommand> {
-        self.commands
-            .iter()
-            .map(|(name, info)| {
-                let mut command = CommandBuilder::new(
-                    name,
-                    info.2,
-                    twilight_model::application::command::CommandType::ChatInput,
-                );
-                for option in &info.1 {
-                    command = command.option(option.clone());
+        let mut commands: Vec<TwilightCommand> = Vec::new();
+
+        if let CommandTree::Node(children) = &self.commands {
+            for (name, child) in children.iter() {
+                let mut command;
+
+                match child {
+                    CommandTree::Leaf(info) => {
+                        // This is a top-level command
+                        command = CommandBuilder::new(
+                            name,
+                            info.2,
+                            twilight_model::application::command::CommandType::ChatInput,
+                        );
+                        for option in &info.1 {
+                            command = command.option(option.clone());
+                        }
+                    }
+                    CommandTree::Node(subcommand_or_group) => {
+                        command = CommandBuilder::new(
+                            name,
+                            "No description provided",
+                            twilight_model::application::command::CommandType::ChatInput,
+                        );
+                        for (grandchild_name, grandchild) in subcommand_or_group.iter() {
+                            match grandchild {
+                                CommandTree::Leaf(info) => {
+                                    // This is a subcommand
+                                    let mut subcommand =
+                                        SubCommandBuilder::new(grandchild_name, info.2);
+                                    for option in &info.1 {
+                                        subcommand = subcommand.option(option.clone());
+                                    }
+                                    command = command.option(subcommand.build());
+                                }
+                                CommandTree::Node(_) => {
+                                    // This is a subcommand group
+                                    if let CommandTree::Node(sub_subcommands) = grandchild {
+                                        let subcommand_group = SubCommandGroupBuilder::new(
+                                            grandchild_name,
+                                            "No description provided",
+                                        );
+                                        let mut subcommands = Vec::new();
+
+                                        for (subchild_name, subchild) in sub_subcommands.iter() {
+                                            if let CommandTree::Leaf(info) = subchild {
+                                                let mut subcommand =
+                                                    SubCommandBuilder::new(subchild_name, info.2);
+                                                for option in &info.1 {
+                                                    subcommand = subcommand.option(option.clone());
+                                                }
+                                                subcommands.push(subcommand);
+                                            }
+                                        }
+                                        command = command.option(
+                                            subcommand_group.subcommands(subcommands).build(),
+                                        );
+                                    } else {
+                                        panic!("Expected Node for subcommand group");
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                command.build()
-            })
-            .collect()
+                commands.push(command.build());
+            }
+
+            commands
+        } else {
+            panic!("Root of command tree must be a node");
+        }
     }
+}
+
+pub fn resolve_command_path(interaction: &CommandData) -> Option<(String, Vec<CommandDataOption>)> {
+    debug!("Resolving command path for interaction: {:?}", interaction);
+    let mut path = vec![interaction.name.clone()];
+
+    if !is_option_sub(&interaction.options) {
+        return Some((path.join(" "), interaction.options.clone()));
+    }
+
+    let option = &interaction.options[0];
+    match &option.value {
+        CommandOptionValue::SubCommand(options) => {
+            path.push(option.name.clone());
+            Some((path.join(" "), options.clone()))
+        }
+        CommandOptionValue::SubCommandGroup(group) => {
+            let group_name = &option.name;
+            path.push(group_name.clone());
+            let subcommand = &group[0];
+            path.push(subcommand.name.clone());
+            if let CommandOptionValue::SubCommand(options) = &subcommand.value {
+                Some((path.join(" "), options.clone()))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn is_option_sub(options: &[CommandDataOption]) -> bool {
+    if options.is_empty() {
+        return false;
+    }
+    matches!(
+        &options[0].value,
+        CommandOptionValue::SubCommand(_) | CommandOptionValue::SubCommandGroup(_)
+    )
 }

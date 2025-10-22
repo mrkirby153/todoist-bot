@@ -7,7 +7,7 @@ use syn::Ident;
 use syn::parse_macro_input;
 
 #[derive(Debug, FromDeriveInput)]
-#[darling(attributes(command), supports(struct_named))]
+#[darling(attributes(command), supports(struct_named, struct_unit))]
 struct CommandReceiver {
     ident: syn::Ident,
     data: Data<(), OptionReceiver>,
@@ -95,6 +95,17 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let command_name = &receiver.name;
 
+    let option_map_ast = if fields.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            let options_map = options
+                .iter()
+                .map(|opt| (opt.name.clone(), opt.value.clone()))
+                .collect::<::std::collections::HashMap<_, _>>();
+        }
+    };
+
     quote! {
         #[automatically_derived]
         impl crate::interactions::commands::Command for #ident {
@@ -110,20 +121,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
             fn description() -> &'static str {
                 #description
             }
-            fn from_interaction_data(data: &::twilight_model::application::interaction::InteractionData) -> Result<Self, crate::interactions::commands::arguments::Error> {
-                if let ::twilight_model::application::interaction::InteractionData::ApplicationCommand(command_data) = data {
-                    let options_map = command_data
-                        .options
-                        .iter()
-                        .map(|opt| (opt.name.clone(), opt.value.clone()))
-                        .collect::<::std::collections::HashMap<_, _>>();
-
-                    Ok(Self {
-                        #(#struct_fields,)*
-                    })
-                } else {
-                    Err(crate::interactions::commands::arguments::Error::InvalidType)
-                }
+            fn from_command_data(options: Vec<::twilight_model::application::interaction::application_command::CommandDataOption>) -> Result<Self, crate::interactions::commands::arguments::Error> {
+                #option_map_ast
+                Ok(Self {
+                    #(#struct_fields,)*
+                })
             }
         }
     }

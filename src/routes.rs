@@ -15,7 +15,7 @@ use twilight_model::{
     http::interaction::InteractionResponse,
 };
 
-use crate::AppState;
+use crate::{AppState, interactions::commands::resolve_command_path};
 
 pub async fn health() -> &'static str {
     "OK"
@@ -66,11 +66,25 @@ pub async fn interaction_callback(
                 let name = &command.name;
                 debug!("Processing application command: {}", name);
 
-                let slash_command_result = state
-                    .slash_commands
-                    .execute(name, Arc::clone(&interaction), Arc::new(state.clone()))
-                    .await;
-                if let Some(response) = slash_command_result {
+                let resolved_slash_command = resolve_command_path(command);
+
+                let slash_result =
+                    if let Some((command_path, command_data)) = resolved_slash_command {
+                        debug!("Resolved command path: {}", command_path);
+                        state
+                            .slash_commands
+                            .execute(
+                                &command_path,
+                                Arc::clone(&interaction),
+                                command_data,
+                                Arc::new(state.clone()),
+                            )
+                            .await
+                    } else {
+                        None
+                    };
+
+                if let Some(response) = slash_result {
                     response
                 } else if let Some(handler) = state.context_commands.get(name) {
                     handler(Arc::clone(&interaction), Arc::new(state.clone())).await

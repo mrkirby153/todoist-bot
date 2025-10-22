@@ -21,6 +21,8 @@ pub enum Error {
     InvalidType,
     #[error("Missing field for command option")]
     MissingField,
+    #[error("{0}")]
+    Custom(String),
 }
 
 #[derive(Debug, Clone)]
