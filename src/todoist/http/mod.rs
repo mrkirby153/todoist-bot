@@ -1,7 +1,13 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
+use anyhow::Result;
 use axum::http::HeaderMap;
 use reqwest::Client;
+use serde::de::DeserializeOwned;
+use tracing::debug;
+use url::Url;
+
+use crate::todoist::http::models::CursorResponse;
 
 const TODOIST_API_BASE_URL: &str = "https://api.todoist.com/api/v1";
 
@@ -38,6 +44,39 @@ impl TodoistHttpClient {
 
     pub fn delete(&self, url: &str) -> reqwest::RequestBuilder {
         self.client.delete(self.make_url(url))
+    }
+
+    pub async fn get_all<T>(&self, url: &str) -> Result<Vec<T>>
+    where
+        T: DeserializeOwned,
+    {
+        let url = self.make_url(url);
+        let mut url = Url::parse(&url)?;
+        let mut cursor: Option<String> = None;
+
+        let mut results = Vec::new();
+
+        loop {
+            if let Some(c) = &cursor.take() {
+                let mut query_pairs: HashMap<_, _> = url.query_pairs().into_owned().collect();
+                query_pairs.insert("cursor".to_string(), c.to_string());
+                url.query_pairs_mut().clear().extend_pairs(query_pairs);
+            }
+            let url_str = url.as_str();
+            debug!("Fetching URL: {}", url);
+            let resp = self.client.get(url_str).send().await?;
+            let resp_json: CursorResponse<T> = resp.json().await?;
+
+            results.extend(resp_json.results);
+            cursor = resp_json.next_cursor;
+            debug!("Next cursor: {:?}", cursor);
+
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        Ok(results)
     }
 
     fn make_url(&self, endpoint: &str) -> String {
