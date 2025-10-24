@@ -1,5 +1,5 @@
 #![allow(dead_code, reason = "Models for Todoist HTTP API responses")]
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Offset};
+use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveDateTime, Offset};
 use chrono_tz::Tz;
 use serde::Deserialize;
 use thiserror::Error;
@@ -35,7 +35,7 @@ pub struct Project {
     pub is_shared: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Due {
     pub date: String,
     pub timezone: Option<String>,
@@ -50,9 +50,16 @@ pub enum DueParseError {
     InvalidFormat,
 }
 
+impl Due {
+    pub fn is_date_only(&self) -> bool {
+        // If the date string is in the format YYYY-MM-DD, it's date only
+        NaiveDate::parse_from_str(self.date.as_str(), "%Y-%m-%d").is_ok()
+    }
+}
+
 impl TryFrom<Due> for DateTime<FixedOffset> {
     type Error = DueParseError;
-    fn try_from(due: Due) -> Result<Self, Self::Error> {
+    fn try_from(due: Due) -> Result<Self, DueParseError> {
         if let Ok(dt) = DateTime::parse_from_rfc3339(due.date.as_str()) {
             return Ok(dt);
         }
@@ -73,7 +80,14 @@ impl TryFrom<Due> for DateTime<FixedOffset> {
                     .ok_or(DueParseError::InvalidFormat)?
                     .fixed_offset());
             } else {
-                return Err(DueParseError::InvalidFormat);
+                let naive = naive_date
+                    .and_hms_opt(0, 0, 0)
+                    .ok_or(DueParseError::InvalidFormat)?
+                    .and_local_timezone(Local)
+                    .single()
+                    .ok_or(DueParseError::InvalidFormat)?
+                    .fixed_offset();
+                return Ok(naive);
             }
         }
 
@@ -129,4 +143,10 @@ pub struct Task {
     pub description: String,
     pub day_order: i64,
     pub is_collapsed: bool,
+}
+
+impl Task {
+    pub fn get_url(&self) -> String {
+        format!("https://app.todoist.com/app/task/{}", self.id)
+    }
 }

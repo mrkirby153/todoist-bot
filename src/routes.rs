@@ -85,6 +85,7 @@ pub async fn interaction_callback(
                     };
 
                 if let Some(response) = slash_result {
+                    debug!("Returning response: {:?}", response);
                     response
                 } else if let Some(handler) = state.context_commands.get(name) {
                     handler(Arc::clone(&interaction), Arc::new(state.clone())).await
@@ -113,5 +114,9 @@ pub async fn interaction_callback(
         }
         _ => return Err(StatusCode::NOT_IMPLEMENTED),
     };
+
+    let as_json = serde_json::to_string(&resp).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    debug!("Response JSON: {}", as_json);
+
     Ok(Json(resp))
 }

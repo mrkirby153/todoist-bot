@@ -15,6 +15,7 @@ use twilight_model::user::CurrentUser;
 use crate::interactions::ContextCommands;
 use crate::interactions::commands::CommandExecutor;
 use crate::interactions::verifier::Verifier;
+use crate::todoist::http::TodoistHttpClient;
 
 mod interactions;
 mod routes;
@@ -26,13 +27,16 @@ pub struct AppState {
     client: Arc<Client>,
     context_commands: Arc<ContextCommands<AppState>>,
     slash_commands: Arc<CommandExecutor<AppState>>,
+    todoist_client: Arc<TodoistHttpClient>,
 }
 #[derive(Debug, Error)]
-enum Error {
+enum MissingEnvironemntVariable {
     #[error("INTERACTION_KEY environment variable must be set")]
-    MissingInteractionKey,
+    InteractionKey,
     #[error("BOT_TOKEN environment variable must be set")]
-    MissingBotToken,
+    BotToken,
+    #[error("TODOIST_API_TOKEN environment variable must be set")]
+    TodoistApiToken,
 }
 
 #[tokio::main]
@@ -40,10 +44,14 @@ async fn main() -> Result<()> {
     dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let interaction_key = env::var("INTERACTION_KEY").map_err(|_| Error::MissingInteractionKey)?;
+    let todoist_token =
+        env::var("TODOIST_API_TOKEN").map_err(|_| MissingEnvironemntVariable::TodoistApiToken)?;
+    let todoist_client = Arc::new(TodoistHttpClient::new(&todoist_token));
+    let interaction_key =
+        env::var("INTERACTION_KEY").map_err(|_| MissingEnvironemntVariable::InteractionKey)?;
     let verifier = Arc::new(Verifier::try_new(&interaction_key)?);
 
-    let bot_token = env::var("BOT_TOKEN").map_err(|_| Error::MissingBotToken)?;
+    let bot_token = env::var("BOT_TOKEN").map_err(|_| MissingEnvironemntVariable::BotToken)?;
     let client = Arc::new(Client::new(bot_token));
 
     let (context_commands, slash_commands) = register_commands();
@@ -55,6 +63,7 @@ async fn main() -> Result<()> {
         client,
         context_commands,
         slash_commands,
+        todoist_client,
     };
 
     let user = retrieve_current_user(&state.client).await?;
@@ -120,13 +129,7 @@ fn register_commands() -> (ContextCommands<AppState>, CommandExecutor<AppState>)
     context_commands.register("Add To-Do", interactions::command_handlers::add_reminder);
 
     let mut command_executor = CommandExecutor::new();
-    command_executor.register(interactions::command_handlers::test_command);
-    command_executor.register(interactions::command_handlers::subcommand1_handler);
-    command_executor.register(interactions::command_handlers::subcommand2_handler);
-    command_executor.register(interactions::command_handlers::subcommand_group1_handler);
-    command_executor.register(interactions::command_handlers::subcommand_group2_handler);
-    command_executor.register(interactions::command_handlers::subcommand_group3_handler);
-    command_executor.register(interactions::command_handlers::test_command_no_arguments);
+    command_executor.register(interactions::command_handlers::handle_today);
 
     (context_commands, command_executor)
 }
