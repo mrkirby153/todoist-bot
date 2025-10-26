@@ -1773,6 +1773,7 @@ dependencies = [
  "chrono-tz",
  "dotenv",
  "ed25519-dalek",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",

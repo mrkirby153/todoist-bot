@@ -27,3 +27,4 @@ todoist_derive = { path = "./todoist_derive" }
 url = "2.5.7"
 chrono = "0.4.42"
 chrono-tz = "0.10.4"
+once_cell = "1.21.3"
