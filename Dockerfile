@@ -24,6 +24,11 @@ RUN mkdir /app
 WORKDIR /app
 
 COPY --from=builder /app/target/release/todoist-bot /app/todoist-bot
+COPY --from=builder /app/target/release/emoji-sync /app/emoji-sync
+ADD docker_entrypoint.sh /app/docker_entrypoint.sh
+ADD emoji/ /app/emoji/
+RUN chmod +x /app/docker_entrypoint.sh
 
-CMD ["/app/todoist-bot"]
+
+CMD ["/app/docker_entrypoint.sh"]
 EXPOSE 3000

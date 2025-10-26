@@ -5,6 +5,7 @@ members = ["todoist_derive"]
 name = "todoist-bot"
 version = "0.1.0"
 edition = "2024"
+default-run = "todoist-bot"
 
 [dependencies]
 anyhow = "1.0.100"
@@ -28,3 +29,14 @@ url = "2.5.7"
 chrono = "0.4.42"
 chrono-tz = "0.10.4"
 once_cell = "1.21.3"
+clap = { version = "4.5.50", features = ["derive"] }
+base64 = "0.22.1"
+
+
+[[bin]]
+name = "todoist-bot"
+path = "src/bin/main.rs"
+
+[[bin]]
+name = "emoji-sync"
+path = "src/bin/emoji.rs"

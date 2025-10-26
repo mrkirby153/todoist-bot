@@ -285,6 +285,15 @@ where
     }
 }
 
+impl<S> Default for CommandExecutor<S>
+where
+    S: Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn resolve_command_path(interaction: &CommandData) -> Option<(String, Vec<CommandDataOption>)> {
     debug!("Resolving command path for interaction: {:?}", interaction);
     let mut path = vec![interaction.name.clone()];

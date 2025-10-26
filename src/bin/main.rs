@@ -5,32 +5,19 @@ use axum::Router;
 use axum::routing::{get, post};
 use dotenv::dotenv;
 use thiserror::Error;
+use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
 use tokio::net::TcpListener;
 use tracing::info;
 use twilight_http::Client;
 use twilight_model::application::command::Command;
 use twilight_model::id::Id;
-use twilight_model::user::CurrentUser;
 
-use crate::emoji::Emojis;
-use crate::interactions::ContextCommands;
-use crate::interactions::commands::CommandExecutor;
-use crate::interactions::verifier::Verifier;
-use crate::todoist::http::TodoistHttpClient;
+use todoist_bot::emoji::Emojis;
+use todoist_bot::interactions::ContextCommands;
+use todoist_bot::interactions::commands::CommandExecutor;
+use todoist_bot::interactions::verifier::Verifier;
+use todoist_bot::todoist::http::TodoistHttpClient;
 
-mod emoji;
-mod interactions;
-mod routes;
-mod todoist;
-
-#[derive(Clone)]
-pub struct AppState {
-    verifier: Arc<Verifier>,
-    client: Arc<Client>,
-    context_commands: Arc<ContextCommands<AppState>>,
-    slash_commands: Arc<CommandExecutor<AppState>>,
-    todoist_client: Arc<TodoistHttpClient>,
-}
 #[derive(Debug, Error)]
 enum MissingEnvironemntVariable {
     #[error("INTERACTION_KEY environment variable must be set")]
@@ -91,10 +78,6 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-async fn retrieve_current_user(client: &Client) -> Result<CurrentUser> {
-    Ok(client.current_user().await?.model().await?)
 }
 
 async fn update_commands(

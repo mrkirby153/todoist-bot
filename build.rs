@@ -42,7 +42,7 @@ impl Emojis {
 impl Display for Emoji {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let map = EMOJI_MAP.get().expect(\"Emoji map not initialized.\");
-        if let Some(id) = map.get(self.1) {
+        if let Some(id) = map.get(self.0) {
             write!(f, \"<:{}:{}>\", self.0, id)
         } else {
             panic!(\"Emoji ID not found for {}\", self.1);
