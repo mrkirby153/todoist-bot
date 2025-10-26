@@ -5,6 +5,7 @@ use axum::Router;
 use axum::routing::{get, post};
 use dotenv::dotenv;
 use thiserror::Error;
+use todoist_bot::claude::ClaudeHttpClient;
 use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
 use tokio::net::TcpListener;
 use tracing::info;
@@ -26,6 +27,8 @@ enum MissingEnvironemntVariable {
     BotToken,
     #[error("TODOIST_API_TOKEN environment variable must be set")]
     TodoistApiToken,
+    #[error("CLAUDE_API_TOKEN environment variable must be set")]
+    ClaudeApiToken,
 }
 
 #[tokio::main]
@@ -36,6 +39,11 @@ async fn main() -> Result<()> {
     let todoist_token =
         env::var("TODOIST_API_TOKEN").map_err(|_| MissingEnvironemntVariable::TodoistApiToken)?;
     let todoist_client = Arc::new(TodoistHttpClient::new(&todoist_token));
+
+    let claude_token =
+        env::var("CLAUDE_API_TOKEN").map_err(|_| MissingEnvironemntVariable::ClaudeApiToken)?;
+    let claude_client = Arc::new(ClaudeHttpClient::new(&claude_token, "claude-sonnet-4-5"));
+
     let interaction_key =
         env::var("INTERACTION_KEY").map_err(|_| MissingEnvironemntVariable::InteractionKey)?;
     let verifier = Arc::new(Verifier::try_new(&interaction_key)?);
@@ -47,12 +55,19 @@ async fn main() -> Result<()> {
     let context_commands = Arc::new(context_commands);
     let slash_commands = Arc::new(slash_commands);
 
+    let app_id = {
+        let response = client.current_user_application().await?;
+        response.model().await?.id
+    };
+
     let state = AppState {
+        app_id,
         verifier,
         client,
         context_commands,
         slash_commands,
         todoist_client,
+        claude_client,
     };
 
     Emojis::initialize("emojis.json")?;

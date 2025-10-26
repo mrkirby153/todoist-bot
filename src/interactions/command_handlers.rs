@@ -1,12 +1,18 @@
 use std::sync::Arc;
 
 use crate::AppState;
+use crate::claude::message_create;
+use crate::claude::models::InputMessage;
+use crate::claude::models::MessageRequest;
+use crate::emoji::Emojis;
 use crate::todoist;
 use crate::todoist::http::models::Due;
 use chrono::DateTime;
 use chrono::FixedOffset;
 use chrono::Local;
 use todoist_derive::Command;
+use tracing::debug;
+use tracing::error;
 use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::http::interaction::InteractionResponseType;
 use twilight_model::{
@@ -17,13 +23,61 @@ use twilight_util::builder::message::ContainerBuilder;
 use twilight_util::builder::message::TextDisplayBuilder;
 
 pub async fn add_reminder(
-    _interaction: Arc<Interaction>,
-    _state: Arc<AppState>,
+    interaction: Arc<Interaction>,
+    state: Arc<AppState>,
 ) -> InteractionResponse {
+    debug!("Received add_reminder interaction: {:#?}", interaction);
+
+    tokio::spawn(async move {
+        let response = message_create(
+        state.claude_client.as_ref(),
+        MessageRequest {
+            model: state.claude_client.model.clone(),
+            max_tokens: 1000,
+            messages: vec![InputMessage {
+                role: "user".to_string(),
+                content: format!("Create a reminder to add to my to-do list from the following message: {}", interaction.message.as_ref().map(|msg| msg.content.clone()).unwrap_or_default()),
+            }],
+            system: Some(
+                "You are a helpful assistant that creates reminders. Use concise language, and only respond with the reminder text without any additional commentary. The reminder should be suitable for adding to a to-do list application."
+                    .to_string(),
+            ),
+        }).await;
+
+        println!("Claude response: {:?}", response);
+
+        let resp = state
+            .client
+            .interaction(state.app_id)
+            .create_response(
+                interaction.id,
+                &interaction.token,
+                &InteractionResponse {
+                    kind: InteractionResponseType::ChannelMessageWithSource,
+                    data: Some(InteractionResponseData {
+                        content: Some(match response {
+                            Ok(message_response) => {
+                                format!(
+                                    "{} Anthropic's response: ```\n{:#?}\n```",
+                                    Emojis::GREEN_TICK,
+                                    message_response
+                                )
+                            }
+                            Err(e) => format!("An error occurred: {}", e),
+                        }),
+                        ..Default::default()
+                    }),
+                },
+            )
+            .await;
+        if let Err(e) = resp {
+            error!("Failed to send follow-up message: {}", e);
+        }
+    });
+
     InteractionResponse {
-        kind: InteractionResponseType::ChannelMessageWithSource,
+        kind: InteractionResponseType::DeferredChannelMessageWithSource,
         data: Some(InteractionResponseData {
-            content: Some("Reminder added!".to_string()),
             flags: Some(MessageFlags::EPHEMERAL),
             ..Default::default()
         }),
@@ -88,7 +142,7 @@ pub async fn handle_today(
 
 fn build_error_response(result: anyhow::Error) -> InteractionResponse {
     let container = ContainerBuilder::new()
-        .accent_color(Some(0xFF000))
+        .accent_color(Some(0xFF0000))
         .component(TextDisplayBuilder::new(format!("An error occurred: {}", result)).build())
         .build();
 
