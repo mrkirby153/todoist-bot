@@ -12,11 +12,13 @@ use twilight_model::application::command::Command;
 use twilight_model::id::Id;
 use twilight_model::user::CurrentUser;
 
+use crate::emoji::Emojis;
 use crate::interactions::ContextCommands;
 use crate::interactions::commands::CommandExecutor;
 use crate::interactions::verifier::Verifier;
 use crate::todoist::http::TodoistHttpClient;
 
+mod emoji;
 mod interactions;
 mod routes;
 mod todoist;
@@ -65,6 +67,8 @@ async fn main() -> Result<()> {
         slash_commands,
         todoist_client,
     };
+
+    Emojis::initialize("emojis.json")?;
 
     let user = retrieve_current_user(&state.client).await?;
     info!("Logged in as {}#{}", user.name, user.discriminator);
