@@ -31,8 +31,6 @@ struct Args {
 enum Error {
     #[error("BOT_TOKEN environment variable must be set")]
     NoBotToken,
-    #[error("Invalid application ID")]
-    InvalidApplicationId,
     #[error("Failed to read emoji directory: {0}")]
     DirectoryRead(#[from] std::io::Error),
     #[error("Invalid file name")]
@@ -63,16 +61,14 @@ async fn main() -> Result<()> {
         current_user.name, current_user.discriminator, current_user.id
     );
 
-    let application_id: Id<ApplicationMarker> = if let Some(app_id) = args.app_id {
-        println!("Using provided application ID: {}", app_id);
-        app_id.parse().map_err(|_| Error::InvalidApplicationId)?
-    } else {
-        println!(
-            "No application ID provided, using current user's ID: {}",
-            current_user.id
-        );
-        Id::new(current_user.id.get())
-    };
+    let application_id: Id<ApplicationMarker> = client
+        .current_user_application()
+        .await
+        .map_err(|e| anyhow!(e))?
+        .model()
+        .await?
+        .id;
+    println!("Using application ID: {}", application_id);
 
     let current_emojis = client
         .get_application_emojis(application_id)
