@@ -69,21 +69,68 @@ pub async fn interaction_callback(
 
                 let resolved_slash_command = resolve_command_path(command);
 
-                let slash_result =
-                    if let Some((command_path, command_data)) = resolved_slash_command {
-                        debug!("Resolved command path: {}", command_path);
+                let slash_result = if let Some((command_path, command_data)) =
+                    resolved_slash_command
+                {
+                    debug!("Resolved command path: {}", command_path);
+
+                    let state = Arc::new(state.clone());
+                    let callback_state = Arc::clone(&state);
+                    let interaction = Arc::clone(&interaction);
+                    let callback_interaction = Arc::clone(&interaction);
+
+                    let mut handle = tokio::spawn(async move {
+                        let inner_state = Arc::clone(&state);
                         state
                             .slash_commands
-                            .execute(
-                                &command_path,
-                                Arc::clone(&interaction),
-                                command_data,
-                                Arc::new(state.clone()),
-                            )
+                            .execute(&command_path, interaction, command_data, inner_state)
                             .await
-                    } else {
-                        None
-                    };
+                    });
+
+                    match timeout(Duration::from_secs(1), &mut handle).await {
+                        Ok(Ok(resp)) => resp,
+                        Ok(Err(e)) => {
+                            error!("Error executing slash command: {}", e);
+                            None
+                        }
+                        Err(_) => {
+                            tokio::spawn(async move {
+                                let state = callback_state;
+                                let interaction = callback_interaction;
+                                let resp = handle.await.unwrap_or(None);
+                                if let Some(response) = resp {
+                                    let data = response.data.unwrap_or_default();
+
+                                    let update_response = state
+                                        .client
+                                        .interaction(state.app_id)
+                                        .update_response(&interaction.token)
+                                        .attachments(&data.attachments.unwrap_or_default())
+                                        .content(data.content.as_deref())
+                                        .embeds(data.embeds.as_deref())
+                                        .components(data.components.as_deref())
+                                        .await;
+
+                                    if let Err(e) = update_response {
+                                        error!(
+                                            "Failed to send delayed slash command response: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            });
+                            Some(InteractionResponse {
+                                kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource,
+                                data: Some(InteractionResponseData{
+                                    flags: Some(MessageFlags::EPHEMERAL),
+                                    ..InteractionResponseData::default()
+                                })
+                            })
+                        }
+                    }
+                } else {
+                    None
+                };
 
                 if let Some(response) = slash_result {
                     debug!("Returning response: {:?}", response);
