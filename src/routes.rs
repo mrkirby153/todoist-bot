@@ -1,11 +1,12 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json,
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use tracing::{debug, warn};
+use tokio::time::timeout;
+use tracing::{debug, error, warn};
 use twilight_model::{
     application::interaction::InteractionData::ApplicationCommand, channel::message::MessageFlags,
     http::interaction::InteractionResponseData,
@@ -87,8 +88,68 @@ pub async fn interaction_callback(
                 if let Some(response) = slash_result {
                     debug!("Returning response: {:?}", response);
                     response
-                } else if let Some(handler) = state.context_commands.get(name) {
-                    handler(Arc::clone(&interaction), Arc::new(state.clone())).await
+                } else if let Some(handler) = state.context_commands.get(name).cloned() {
+                    let state = Arc::new(state.clone());
+                    let handler_state = Arc::clone(&state);
+                    let interaction = Arc::clone(&interaction);
+                    let handler_interaction = Arc::clone(&interaction);
+
+                    let mut handle = tokio::spawn(async move { handler(interaction, state).await });
+
+                    match timeout(Duration::from_secs(1), &mut handle).await {
+                        Ok(Ok(resp)) => {
+                            debug!("Command handler returned quickly.");
+                            resp
+                        }
+                        Ok(Err(e)) => {
+                            error!("Error executing command handler: {}", e);
+                            InteractionResponse {
+                                kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                data: Some(InteractionResponseData{
+                                    content: Some("An error occurred while processing your command.".to_string()),
+                                    flags: Some(MessageFlags::EPHEMERAL),
+                                    ..InteractionResponseData::default()
+                                })
+                            }
+                        }
+                        Err(_) => {
+                            debug!("Command handler timed out");
+                            tokio::spawn(async move {
+                                debug!("Preparing to send delayed response");
+                                let resp = handle.await.unwrap_or(InteractionResponse {
+                                            kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                            data: Some(InteractionResponseData{
+                                                content: Some("An error occurred while processing your command.".to_string()),
+                                                flags: Some(MessageFlags::EPHEMERAL),
+                                                ..InteractionResponseData::default()
+                                            })
+                                        });
+                                debug!("Sending delayed response");
+
+                                let data = resp.data.unwrap_or_default();
+
+                                let response = handler_state
+                                    .client
+                                    .interaction(handler_state.app_id)
+                                    .update_response(&handler_interaction.token)
+                                    .attachments(&data.attachments.unwrap_or_default())
+                                    .content(data.content.as_deref())
+                                    .embeds(data.embeds.as_deref())
+                                    .components(data.components.as_deref())
+                                    .await;
+                                if let Err(e) = response {
+                                    error!("Failed to send delayed response: {}", e);
+                                }
+                            });
+                            InteractionResponse {
+                                kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource,
+                                data: Some(InteractionResponseData{
+                                    flags: Some(MessageFlags::EPHEMERAL),
+                                    ..InteractionResponseData::default()
+                                })
+                            }
+                        }
+                    }
                 } else {
                     warn!("No handler found for command: {}", name);
                     InteractionResponse {

@@ -23,7 +23,7 @@ type AsyncHandler<T> = Box<
 /// Commands that can be used via a context menu.
 #[derive(Default)]
 pub struct ContextCommands<T> {
-    commands: HashMap<String, AsyncHandler<T>>,
+    commands: HashMap<String, Arc<AsyncHandler<T>>>,
 }
 
 impl<T> ContextCommands<T> {
@@ -42,10 +42,10 @@ impl<T> ContextCommands<T> {
             Box::pin(handler(interaction, state))
                 as Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
         });
-        self.commands.insert(command.to_string(), handler);
+        self.commands.insert(command.to_string(), Arc::new(handler));
     }
 
-    pub fn get(&self, name: &str) -> Option<&AsyncHandler<T>> {
+    pub fn get(&self, name: &str) -> Option<&Arc<AsyncHandler<T>>> {
         self.commands.get(name)
     }
 }

@@ -12,7 +12,6 @@ use chrono::FixedOffset;
 use chrono::Local;
 use todoist_derive::Command;
 use tracing::debug;
-use tracing::error;
 use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::http::interaction::InteractionResponseType;
 use twilight_model::{
@@ -28,8 +27,7 @@ pub async fn add_reminder(
 ) -> InteractionResponse {
     debug!("Received add_reminder interaction: {:#?}", interaction);
 
-    tokio::spawn(async move {
-        let response = message_create(
+    let response = message_create(
         state.claude_client.as_ref(),
         MessageRequest {
             model: state.claude_client.model.clone(),
@@ -44,41 +42,21 @@ pub async fn add_reminder(
             ),
         }).await;
 
-        println!("Claude response: {:?}", response);
-
-        let resp = state
-            .client
-            .interaction(state.app_id)
-            .create_response(
-                interaction.id,
-                &interaction.token,
-                &InteractionResponse {
-                    kind: InteractionResponseType::ChannelMessageWithSource,
-                    data: Some(InteractionResponseData {
-                        content: Some(match response {
-                            Ok(message_response) => {
-                                format!(
-                                    "{} Anthropic's response: ```\n{:#?}\n```",
-                                    Emojis::GREEN_TICK,
-                                    message_response
-                                )
-                            }
-                            Err(e) => format!("An error occurred: {}", e),
-                        }),
-                        ..Default::default()
-                    }),
-                },
-            )
-            .await;
-        if let Err(e) = resp {
-            error!("Failed to send follow-up message: {}", e);
-        }
-    });
+    println!("Claude response: {:?}", response);
 
     InteractionResponse {
-        kind: InteractionResponseType::DeferredChannelMessageWithSource,
+        kind: InteractionResponseType::ChannelMessageWithSource,
         data: Some(InteractionResponseData {
-            flags: Some(MessageFlags::EPHEMERAL),
+            content: Some(match response {
+                Ok(message_response) => {
+                    format!(
+                        "{} Anthropic's response: ```\n{:#?}\n```",
+                        Emojis::GREEN_TICK,
+                        message_response
+                    )
+                }
+                Err(e) => format!("An error occurred: {}", e),
+            }),
             ..Default::default()
         }),
     }
