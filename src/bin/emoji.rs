@@ -13,6 +13,7 @@ use twilight_model::{
 };
 
 use base64::{Engine as _, engine::general_purpose};
+use color_print::cprintln;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -44,8 +45,8 @@ async fn main() -> Result<()> {
 
     let in_path = Path::new(&args.in_dir);
 
-    println!(
-        "Generating emoji file from directory: {}",
+    cprintln!(
+        "Generating emoji file from directory: <cyan>{}</cyan>",
         in_path.display()
     );
 
@@ -56,9 +57,11 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow!(e))?;
 
-    println!(
-        "Updating emojis for the user: {}#{} (ID: {})",
-        current_user.name, current_user.discriminator, current_user.id
+    cprintln!(
+        "Updating emojis for the user: <cyan>{}#{}</cyan> (ID: <cyan>{}</cyan>)",
+        current_user.name,
+        current_user.discriminator,
+        current_user.id
     );
 
     let application_id: Id<ApplicationMarker> = client
@@ -68,7 +71,6 @@ async fn main() -> Result<()> {
         .model()
         .await?
         .id;
-    println!("Using application ID: {}", application_id);
 
     let current_emojis = client
         .get_application_emojis(application_id)
@@ -82,7 +84,10 @@ async fn main() -> Result<()> {
         emojis.insert(emoji.name.clone(), emoji.clone());
     });
 
-    println!("Found {} existing emojis.", current_emojis.items.len());
+    cprintln!(
+        "Found <yellow>{}</yellow> existing emojis.",
+        current_emojis.items.len()
+    );
 
     let mut existing_emojis: HashMap<String, Emoji> = HashMap::new();
 
@@ -93,14 +98,12 @@ async fn main() -> Result<()> {
         let path = entry.path();
 
         if path.is_file() {
-            println!("Considering file: {}", path.display());
             let file_name = path
                 .file_stem()
                 .and_then(|os_str| os_str.to_str())
                 .ok_or(Error::InvalidFileName)?;
 
             if let Some(e) = emojis.get(file_name) {
-                println!("Emoji '{}' already exists, skipping.", file_name);
                 existing_emojis.insert(file_name.to_string(), e.clone());
                 continue;
             }
@@ -121,18 +124,24 @@ async fn main() -> Result<()> {
                 .await?
                 .model()
                 .await?;
-            println!("Created emoji '{}'.", file_name);
+            cprintln!(
+                "[<green>+</green>] Created emoji <cyan>{}</cyan>",
+                file_name
+            );
             existing_emojis.insert(file_name.to_string(), resp);
         }
     }
 
     // Remove old emojis
-    println!("Checking for emojis to delete...");
     for emoji in current_emojis.items.iter() {
         if existing_emojis.contains_key(emoji.name.as_str()) {
             continue;
         }
-        println!("Deleting emoji '{}' (ID: {}).", emoji.name, emoji.id);
+        cprintln!(
+            "[<red>-</red>] Deleting emoji <cyan>{}</cyan> (ID: <cyan>{}</cyan>).",
+            emoji.name,
+            emoji.id
+        );
         client
             .delete_application_emoji(application_id, emoji.id)
             .await?;
@@ -149,6 +158,6 @@ async fn main() -> Result<()> {
         .collect::<HashMap<_, _>>();
 
     serde_json::to_writer(&mut writer, &to_write)?;
-    println!("Wrote emojis to file: {}", out_file.display());
+    cprintln!("Wrote emojis to file: <cyan>{}</cyan>", out_file.display());
     Ok(())
 }
