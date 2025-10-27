@@ -57,6 +57,7 @@ fn main() {
 
     // Get all files in the emojis folder
     let entries = read_dir(emoji_folder).expect("Failed to read emojis directory");
+    println!("cargo:rerun-if-changed={}", emoji_folder.display());
 
     let mut emojis: Vec<String> = Vec::new();
 
