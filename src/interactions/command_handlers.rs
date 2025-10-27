@@ -12,8 +12,10 @@ use chrono::FixedOffset;
 use chrono::Local;
 use todoist_derive::Command;
 use tracing::debug;
+use twilight_model::application::interaction::InteractionData;
 use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::http::interaction::InteractionResponseType;
+use twilight_model::id::Id;
 use twilight_model::{
     application::interaction::Interaction, channel::message::MessageFlags,
     http::interaction::InteractionResponse,
@@ -27,6 +29,32 @@ pub async fn add_reminder(
 ) -> InteractionResponse {
     debug!("Received add_reminder interaction: {:#?}", interaction);
 
+    let target_message = {
+        let target_message: Option<&InteractionData> = interaction.data.as_ref();
+        if let InteractionData::ApplicationCommand(c) = target_message.unwrap()
+            && let Some(resolved) = c.resolved.as_ref()
+            && let Some(target) = c.target_id
+        {
+            resolved.messages.get(&Id::new(target.get()))
+        } else {
+            None
+        }
+    };
+
+    if target_message.is_none() {
+        return InteractionResponse {
+            kind: InteractionResponseType::ChannelMessageWithSource,
+            data: Some(InteractionResponseData {
+                content: Some(format!(
+                    "{} Could not find the target message to create a reminder from.",
+                    Emojis::RED_X
+                )),
+                ..Default::default()
+            }),
+        };
+    }
+    let target_message = target_message.unwrap();
+
     let response = message_create(
         state.claude_client.as_ref(),
         MessageRequest {
@@ -34,7 +62,7 @@ pub async fn add_reminder(
             max_tokens: 1000,
             messages: vec![InputMessage {
                 role: "user".to_string(),
-                content: format!("Create a reminder to add to my to-do list from the following message: {}", interaction.message.as_ref().map(|msg| msg.content.clone()).unwrap_or_default()),
+                content: format!("Create a reminder to add to my to-do list from the following message: {}", target_message.content),
             }],
             system: Some(
                 "You are a helpful assistant that creates reminders. Use concise language, and only respond with the reminder text without any additional commentary. The reminder should be suitable for adding to a to-do list application."
@@ -55,7 +83,7 @@ pub async fn add_reminder(
                         message_response
                     )
                 }
-                Err(e) => format!("An error occurred: {}", e),
+                Err(e) => format!("{} An error occurred: {}", Emojis::RED_X, e),
             }),
             ..Default::default()
         }),

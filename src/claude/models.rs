@@ -21,8 +21,8 @@ pub struct MessageResponse {
     stop_reason: Option<String>,
     stop_sequence: Option<String>,
     usage: serde_json::Value,
-    context_management: serde_json::Value,
-    container: serde_json::Value,
+    context_management: Option<serde_json::Value>,
+    container: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
