@@ -30,8 +30,7 @@ pub async fn add_reminder(
     debug!("Received add_reminder interaction: {:#?}", interaction);
 
     let target_message = {
-        let target_message: Option<&InteractionData> = interaction.data.as_ref();
-        if let InteractionData::ApplicationCommand(c) = target_message.unwrap()
+        if let Some(InteractionData::ApplicationCommand(c)) = interaction.data.as_ref()
             && let Some(resolved) = c.resolved.as_ref()
             && let Some(target) = c.target_id
         {
