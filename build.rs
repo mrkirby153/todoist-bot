@@ -12,6 +12,8 @@ use once_cell::sync::OnceCell;
 use thiserror::Error;
 use anyhow::Result;
 use std::fmt::Display;
+use twilight_model::id::Id;
+use twilight_model::id::marker::EmojiMarker;
 
 static EMOJI_MAP: OnceCell<HashMap<String, String>> = OnceCell::new();
 
@@ -47,6 +49,16 @@ impl Display for Emoji {
         } else {
             panic!(\"Emoji ID not found for {}\", self.1);
         }
+    }
+}
+
+impl Emoji {
+    pub fn name(&self) -> &str {
+        self.0
+    }
+
+    pub fn id(&self) -> Id<EmojiMarker> {
+        Id::new(EMOJI_MAP.get().expect(\"Emoji map not initialized.\").get(self.0).expect(\"Emoji ID not found.\").parse().expect(\"Invalid Emoji ID.\"))
     }
 }
 ";
