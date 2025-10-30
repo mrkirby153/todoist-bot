@@ -1,8 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use serde::Serialize;
 use std::result::Result as StdResult;
 
-use crate::todoist::http::{TodoistHttpClient, models::Task};
+use crate::todoist::http::{
+    TodoistHttpClient,
+    models::{Project, Section, Task},
+};
 
 pub mod http;
 
@@ -42,4 +46,49 @@ where
     });
 
     Ok(today_tasks)
+}
+
+pub async fn get_projects(client: &TodoistHttpClient) -> Result<Vec<Project>> {
+    client
+        .get_all::<Project>("/projects")
+        .await
+        .map_err(|e| anyhow!(e))
+}
+
+pub async fn get_sections(client: &TodoistHttpClient, project_id: &str) -> Result<Vec<Section>> {
+    client
+        .get_all::<Section>(&format!("/sections?project_id={}", project_id))
+        .await
+        .map_err(|e| anyhow!(e))
+}
+
+#[derive(Serialize, Debug, Default)]
+pub struct NewTask {
+    pub content: String,
+    pub description: Option<String>,
+    pub project_id: Option<String>,
+    pub section_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub order: Option<u32>,
+    pub labels: Option<Vec<String>>,
+    pub priority: Option<u8>,
+    pub assignee_id: Option<String>,
+    pub due_string: Option<String>,
+    pub due_date: Option<String>,
+    pub due_datetime: Option<String>,
+    pub due_lang: Option<String>,
+    pub duration: Option<u32>,
+    pub duration_unit: Option<String>,
+    pub deadline_date: Option<String>,
+}
+
+pub async fn create_task(client: &TodoistHttpClient, new_task: NewTask) -> Result<Task> {
+    client
+        .post("/tasks")
+        .json(&new_task)
+        .send()
+        .await?
+        .json()
+        .await
+        .map_err(|e| anyhow!(e))
 }

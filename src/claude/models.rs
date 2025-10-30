@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -12,17 +14,17 @@ pub struct MessageRequest {
 
 #[derive(Deserialize, Debug)]
 pub struct MessageResponse {
-    id: String,
+    pub id: String,
     #[serde(rename = "type")]
-    obj_type: String,
-    role: String,
-    content: Vec<OutputMessage>,
-    model: String,
-    stop_reason: Option<String>,
-    stop_sequence: Option<String>,
-    usage: serde_json::Value,
-    context_management: Option<serde_json::Value>,
-    container: Option<serde_json::Value>,
+    pub obj_type: String,
+    pub role: String,
+    pub content: Vec<OutputMessage>,
+    pub model: String,
+    pub stop_reason: Option<String>,
+    pub stop_sequence: Option<String>,
+    pub usage: serde_json::Value,
+    pub context_management: Option<serde_json::Value>,
+    pub container: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -40,7 +42,7 @@ pub enum OutputMessage {
         text: String,
     },
     #[serde(rename = "thinking")]
-    Thinking { signature: String, tinking: String },
+    Thinking { signature: String, thinking: String },
     #[serde(rename = "redacted_thinking")]
     RedactedThinking { data: String },
     #[serde(other)]
@@ -54,7 +56,7 @@ pub enum Citation {
     CharacterLocation {
         cited_text: String,
         document_index: u32,
-        doucment_title: Option<String>,
+        document_title: Option<String>,
         end_char_index: u32,
         file_id: Option<String>,
         start_char_index: u32,
@@ -63,7 +65,7 @@ pub enum Citation {
     PageLocation {
         cited_text: String,
         document_index: u32,
-        doucment_title: Option<String>,
+        document_title: Option<String>,
         end_page_number: u32,
         file_id: Option<String>,
         start_page_number: u32,
@@ -90,4 +92,37 @@ pub enum Citation {
         start_block_index: u32,
         title: Option<String>,
     },
+}
+
+impl Display for OutputMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputMessage::Text { text, .. } => {
+                writeln!(f, "{}", text)?;
+            }
+            OutputMessage::Thinking {
+                signature: _,
+                thinking,
+            } => {
+                writeln!(f, "{}", thinking)?;
+            }
+            OutputMessage::RedactedThinking { data } => {
+                writeln!(f, "{}", data)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+impl Display for MessageResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let all = self
+            .content
+            .iter()
+            .map(|c| format!("{}", c))
+            .collect::<Vec<String>>();
+        write!(f, "{}", all.join(" "))?;
+        Ok(())
+    }
 }

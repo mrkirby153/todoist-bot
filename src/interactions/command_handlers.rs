@@ -1,4 +1,9 @@
+use futures::future;
 use std::sync::Arc;
+use twilight_model::channel::message::component::SelectMenuType;
+use twilight_util::builder::message::ActionRowBuilder;
+use twilight_util::builder::message::SelectMenuBuilder;
+use twilight_util::builder::message::SelectMenuOptionBuilder;
 
 use crate::AppState;
 use crate::claude::message_create;
@@ -6,6 +11,7 @@ use crate::claude::models::InputMessage;
 use crate::claude::models::MessageRequest;
 use crate::emoji::Emojis;
 use crate::todoist;
+use crate::todoist::NewTask;
 use crate::todoist::http::models::Due;
 use chrono::DateTime;
 use chrono::FixedOffset;
@@ -27,8 +33,6 @@ pub async fn add_reminder(
     interaction: Arc<Interaction>,
     state: Arc<AppState>,
 ) -> InteractionResponse {
-    debug!("Received add_reminder interaction: {:#?}", interaction);
-
     let target_message = {
         if let Some(InteractionData::ApplicationCommand(c)) = interaction.data.as_ref()
             && let Some(resolved) = c.resolved.as_ref()
@@ -53,6 +57,9 @@ pub async fn add_reminder(
         };
     }
     let target_message = target_message.unwrap();
+    let content = &target_message.content;
+    // TODO: Support embeds and ComponentsV2
+    debug!("Asking Claude to create reminder from text: {}", content);
 
     let response = message_create(
         state.claude_client.as_ref(),
@@ -61,7 +68,7 @@ pub async fn add_reminder(
             max_tokens: 1000,
             messages: vec![InputMessage {
                 role: "user".to_string(),
-                content: format!("Create a reminder to add to my to-do list from the following message: {}", target_message.content),
+                content: format!("Create a reminder to add to my to-do list from the following message: {}", content),
             }],
             system: Some(
                 "You are a helpful assistant that creates reminders. Use concise language, and only respond with the reminder text without any additional commentary. The reminder should be suitable for adding to a to-do list application."
@@ -69,23 +76,108 @@ pub async fn add_reminder(
             ),
         }).await;
 
-    println!("Claude response: {:?}", response);
-
-    InteractionResponse {
-        kind: InteractionResponseType::ChannelMessageWithSource,
-        data: Some(InteractionResponseData {
-            content: Some(match response {
-                Ok(message_response) => {
-                    format!(
-                        "{} Anthropic's response: ```\n{:#?}\n```",
-                        Emojis::GREEN_TICK,
-                        message_response
-                    )
+    match response {
+        Ok(response) => {
+            debug!("Claude response: {}", response);
+            let projects = todoist::get_projects(&state.todoist_client).await;
+            let projects = match projects {
+                Ok(projects) => projects,
+                Err(e) => return build_error_response(e),
+            };
+            debug!("Retrieved {} projects from Todoist", projects.len());
+            let projects_with_sections = future::join_all(projects.iter().map(|project| {
+                let client = state.todoist_client.clone();
+                let project_id = project.id.as_str().to_string();
+                async move {
+                    let sections = todoist::get_sections(&client, &project_id)
+                        .await
+                        .unwrap_or(Vec::new());
+                    debug!(
+                        "Retrieved {} sections for project {}",
+                        sections.len(),
+                        project.name
+                    );
+                    (project, sections)
                 }
-                Err(e) => format!("{} An error occurred: {}", Emojis::RED_X, e),
-            }),
-            ..Default::default()
-        }),
+            }))
+            .await;
+
+            // Create the task
+            let new_task = todoist::create_task(
+                &state.todoist_client,
+                NewTask {
+                    content: format!("{}", response),
+                    description: Some(format!(
+                        "Created from message: https://discord.com/channels/{}/{}/{}",
+                        interaction
+                            .guild_id
+                            .map(|id| id.get().to_string())
+                            .unwrap_or("@me".to_string()),
+                        target_message.channel_id,
+                        target_message.id
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+            let new_task = match new_task {
+                Ok(task) => task,
+                Err(e) => return build_error_response(e),
+            };
+
+            debug!("Created new task in Todoist: {:#?}", new_task);
+            let mut section_component = SelectMenuBuilder::new(
+                format!("section_select:{}", new_task.id),
+                SelectMenuType::Text,
+            )
+            .placeholder("Update Section");
+
+            for (project, sections) in projects_with_sections.iter() {
+                // let builder = SelectMenuOptionBuilder::new("")
+                section_component = section_component.option(
+                    SelectMenuOptionBuilder::new(project.name.clone(), project.id.clone())
+                        .description(format!("Add to project: {}", project.name))
+                        .build(),
+                );
+                for section in sections {
+                    let option = SelectMenuOptionBuilder::new(
+                        format!("{} / {}", project.name, section.name),
+                        format!("{}-{}", project.id, section.id),
+                    )
+                    .description(format!("Add to section: {}", section.name))
+                    .build();
+                    section_component = section_component.option(option);
+                }
+            }
+
+            let section_component = section_component.build();
+            let section_component = ActionRowBuilder::new().component(section_component).build();
+
+            let container = ContainerBuilder::new()
+                .accent_color(Some(0x00AA00))
+                .component(
+                    TextDisplayBuilder::new(format!(
+                        "{} Created task: **{}**\n{}",
+                        Emojis::GREEN_TICK,
+                        new_task.content,
+                        new_task.get_url()
+                    ))
+                    .build(),
+                )
+                .component(section_component)
+                .build();
+
+            InteractionResponse {
+                kind: InteractionResponseType::ChannelMessageWithSource,
+                data: Some(InteractionResponseData {
+                    components: Some(vec![container.into()]),
+                    flags: Some(MessageFlags::EPHEMERAL | MessageFlags::IS_COMPONENTS_V2),
+                    ..Default::default()
+                }),
+            }
+        }
+        Err(e) => build_error_response(e),
     }
 }
 

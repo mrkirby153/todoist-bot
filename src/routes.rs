@@ -175,6 +175,11 @@ pub async fn interaction_callback(
 
                                 let data = resp.data.unwrap_or_default();
 
+                                debug!(
+                                    "Delayed response: {}",
+                                    serde_json::to_string_pretty(&data).unwrap_or_default()
+                                );
+
                                 let response = handler_state
                                     .client
                                     .interaction(handler_state.app_id)
@@ -183,6 +188,7 @@ pub async fn interaction_callback(
                                     .content(data.content.as_deref())
                                     .embeds(data.embeds.as_deref())
                                     .components(data.components.as_deref())
+                                    .flags(data.flags.unwrap_or(MessageFlags::empty()))
                                     .await;
                                 if let Err(e) = response {
                                     error!("Failed to send delayed response: {}", e);

@@ -150,3 +150,18 @@ impl Task {
         format!("https://app.todoist.com/app/task/{}", self.id)
     }
 }
+
+#[derive(Deserialize, Debug)]
+pub struct Section {
+    pub id: String,
+    pub user_id: String,
+    pub project_id: String,
+    pub added_at: String,
+    pub updated_at: Option<String>,
+    pub archived_at: Option<String>,
+    pub name: String,
+    pub section_order: i64,
+    pub is_archived: bool,
+    pub is_deleted: bool,
+    pub is_collapsed: bool,
+}
