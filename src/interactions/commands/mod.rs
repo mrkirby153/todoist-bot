@@ -15,14 +15,19 @@ use twilight_model::{
     http::interaction::{InteractionResponse, InteractionResponseData},
 };
 use twilight_util::builder::command::{CommandBuilder, SubCommandBuilder, SubCommandGroupBuilder};
+use twilight_util::builder::message::{ContainerBuilder, TextDisplayBuilder};
 pub mod arguments;
+use anyhow::Error;
 
+use twilight_model::http::interaction::InteractionResponseType;
 pub trait Command: Send + Sync + 'static + Sized {
     fn options() -> Vec<CommandOption>;
     fn from_command_data(data: Vec<CommandDataOption>) -> Result<Self, arguments::Error>;
     fn description() -> &'static str;
     fn name() -> &'static str;
 }
+
+type CommandResponse = Result<InteractionResponse, Error>;
 
 // Trait for type-erased async handlers
 trait AsyncHandler<S>: Send + Sync {
@@ -31,7 +36,7 @@ trait AsyncHandler<S>: Send + Sync {
         interaction: Arc<Interaction>,
         interaction_data: Vec<CommandDataOption>,
         state: Arc<S>,
-    ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = CommandResponse> + Send>>;
 }
 
 // Concrete implementation that preserves command type
@@ -39,7 +44,7 @@ struct TypedAsyncHandler<C, S, F, Fut>
 where
     C: Command,
     F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync,
-    Fut: Future<Output = InteractionResponse> + Send + 'static,
+    Fut: Future<Output = CommandResponse> + Send + 'static,
     S: Send + Sync + 'static,
 {
     handler: F,
@@ -51,28 +56,28 @@ where
     C: Command,
     S: Send + Sync + 'static,
     F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync,
-    Fut: Future<Output = InteractionResponse> + Send + 'static,
+    Fut: Future<Output = CommandResponse> + Send + 'static,
 {
     fn handle(
         &self,
         interaction: Arc<Interaction>,
         options: Vec<CommandDataOption>,
         state: Arc<S>,
-    ) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = CommandResponse> + Send>> {
         let command_data = C::from_command_data(options);
 
         let command_data = match command_data {
             Ok(data) => data,
             Err(_) => {
                 return Box::pin(async {
-                    InteractionResponse {
+                    Ok(InteractionResponse {
                         kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
                         data: Some(InteractionResponseData {
                             content: Some("Failed to parse command data.".to_string()),
                             flags: Some(MessageFlags::EPHEMERAL),
                             ..Default::default()
                         }),
-                    }
+                    })
                 });
             }
         };
@@ -184,7 +189,7 @@ where
     where
         C: Command,
         F: Fn(C, Arc<Interaction>, Arc<S>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = InteractionResponse> + Send + 'static,
+        Fut: Future<Output = CommandResponse> + Send + 'static,
     {
         let handler = TypedAsyncHandler {
             handler,
@@ -207,7 +212,30 @@ where
     ) -> Option<InteractionResponse> {
         let path = name.split(' ').map(String::from).collect::<Vec<_>>();
         let handler = self.commands.get(&path)?;
-        Some(handler.0.handle(interaction, options, state).await)
+
+        Some(
+            handler
+                .0
+                .handle(interaction, options, state)
+                .await
+                .unwrap_or_else(|e| {
+                    let container = ContainerBuilder::new()
+                        .accent_color(Some(0xAA0000))
+                        .component(
+                            TextDisplayBuilder::new(format!("An error occurred: {}", e)).build(),
+                        )
+                        .build();
+
+                    InteractionResponse {
+                        kind: InteractionResponseType::ChannelMessageWithSource,
+                        data: Some(InteractionResponseData {
+                            components: Some(vec![container.into()]),
+                            flags: Some(MessageFlags::EPHEMERAL | MessageFlags::IS_COMPONENTS_V2),
+                            ..Default::default()
+                        }),
+                    }
+                }),
+        )
     }
 
     pub fn build_commands(&self) -> Vec<TwilightCommand> {

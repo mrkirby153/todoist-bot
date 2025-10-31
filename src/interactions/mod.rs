@@ -14,8 +14,10 @@ pub mod command_handlers;
 pub mod commands;
 pub mod verifier;
 
+type InteractionResult = anyhow::Result<InteractionResponse>;
+
 type AsyncHandler<T> = Box<
-    dyn Fn(Arc<Interaction>, Arc<T>) -> Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
+    dyn Fn(Arc<Interaction>, Arc<T>) -> Pin<Box<dyn Future<Output = InteractionResult> + Send>>
         + Send
         + Sync,
 >;
@@ -36,11 +38,11 @@ impl<T> ContextCommands<T> {
     pub fn register<F, Fut>(&mut self, command: &str, handler: F)
     where
         F: Fn(Arc<Interaction>, Arc<T>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = InteractionResponse> + Send + 'static,
+        Fut: Future<Output = InteractionResult> + Send + 'static,
     {
         let handler = Box::new(move |interaction, state| {
             Box::pin(handler(interaction, state))
-                as Pin<Box<dyn Future<Output = InteractionResponse> + Send>>
+                as Pin<Box<dyn Future<Output = InteractionResult> + Send>>
         });
         self.commands.insert(command.to_string(), Arc::new(handler));
     }

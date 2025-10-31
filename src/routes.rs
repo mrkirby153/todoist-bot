@@ -7,6 +7,7 @@ use axum::{
 };
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
+use twilight_model::http::interaction::InteractionResponseType;
 use twilight_model::{
     application::interaction::InteractionData, channel::message::MessageFlags,
     http::interaction::InteractionResponseData,
@@ -15,6 +16,7 @@ use twilight_model::{
     application::interaction::{Interaction, InteractionType},
     http::interaction::InteractionResponse,
 };
+use twilight_util::builder::message::{ContainerBuilder, TextDisplayBuilder};
 
 use crate::{
     AppState,
@@ -64,7 +66,7 @@ pub async fn interaction_callback(
 
     let resp = match interaction.kind {
         InteractionType::Ping => InteractionResponse {
-            kind: twilight_model::http::interaction::InteractionResponseType::Pong,
+            kind: InteractionResponseType::Pong,
             data: None,
         },
         InteractionType::ApplicationCommand => {
@@ -146,7 +148,28 @@ pub async fn interaction_callback(
                     let interaction = Arc::clone(&interaction);
                     let handler_interaction = Arc::clone(&interaction);
 
-                    let mut handle = tokio::spawn(async move { handler(interaction, state).await });
+                    let mut handle = tokio::spawn(async move {
+                        handler(interaction, state).await.unwrap_or_else(|e| {
+                            let container = ContainerBuilder::new()
+                                .accent_color(Some(0xFF0000))
+                                .component(
+                                    TextDisplayBuilder::new(format!("An error occurred: {}", e))
+                                        .build(),
+                                )
+                                .build();
+
+                            InteractionResponse {
+                                kind: InteractionResponseType::ChannelMessageWithSource,
+                                data: Some(InteractionResponseData {
+                                    components: Some(vec![container.into()]),
+                                    flags: Some(
+                                        MessageFlags::EPHEMERAL | MessageFlags::IS_COMPONENTS_V2,
+                                    ),
+                                    ..Default::default()
+                                }),
+                            }
+                        })
+                    });
 
                     match timeout(Duration::from_secs(1), &mut handle).await {
                         Ok(Ok(resp)) => {
