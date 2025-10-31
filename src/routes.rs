@@ -6,9 +6,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use tokio::time::timeout;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use twilight_model::{
-    application::interaction::InteractionData::ApplicationCommand, channel::message::MessageFlags,
+    application::interaction::InteractionData, channel::message::MessageFlags,
     http::interaction::InteractionResponseData,
 };
 use twilight_model::{
@@ -16,7 +16,12 @@ use twilight_model::{
     http::interaction::InteractionResponse,
 };
 
-use crate::{AppState, interactions::commands::resolve_command_path};
+use crate::{
+    AppState,
+    emoji::Emojis,
+    interactions::commands::resolve_command_path,
+    todoist::{MoveTask, move_task},
+};
 
 pub async fn health() -> &'static str {
     "OK"
@@ -63,7 +68,7 @@ pub async fn interaction_callback(
             data: None,
         },
         InteractionType::ApplicationCommand => {
-            if let Some(ApplicationCommand(ref command)) = interaction.data {
+            if let Some(InteractionData::ApplicationCommand(ref command)) = interaction.data {
                 let name = &command.name;
                 debug!("Processing application command: {}", name);
 
@@ -224,6 +229,111 @@ pub async fn interaction_callback(
                         ..InteractionResponseData::default()
                     })
                 }
+            }
+        }
+        InteractionType::MessageComponent => {
+            if let Some(InteractionData::MessageComponent(ref data)) = interaction.data {
+                debug!("Processing message component interaction: {:?}", data);
+                let custom_id_parts = data.custom_id.split(":").collect::<Vec<&str>>();
+
+                let command = custom_id_parts.first().unwrap_or(&"");
+                match *command {
+                    "section_select" => {
+                        let task_id = custom_id_parts.get(1);
+                        match task_id {
+                            Some(task_id) => {
+                                let project_section = data.values.first();
+                                let default = "".to_string();
+                                let parts = project_section
+                                    .unwrap_or(&default)
+                                    .split("-")
+                                    .collect::<Vec<&str>>();
+                                let (project_id, section_id) = match parts.as_slice() {
+                                    [proj, sect] => {
+                                        (Some(proj.to_string()), Some(sect.to_string()))
+                                    }
+                                    [proj] => (Some(proj.to_string()), None),
+                                    _ => (None, None),
+                                };
+
+                                if project_id.is_none() {
+                                    warn!("No project ID found in selection");
+                                    return Ok(Json(InteractionResponse {
+                                        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                        data: Some(InteractionResponseData{
+                                            content: Some(format!("{} No project ID found in selection.", Emojis::RED_X)),
+                                            flags: Some(MessageFlags::EPHEMERAL),
+                                            ..InteractionResponseData::default()
+                                        })
+                                    }));
+                                }
+
+                                let result = move_task(
+                                    &state.todoist_client,
+                                    MoveTask {
+                                        task_id: task_id.to_string(),
+                                        project_id: project_id.clone(),
+                                        section_id: section_id.clone(),
+                                        parent_id: None,
+                                    },
+                                )
+                                .await;
+
+                                match result {
+                                    Ok(task) => {
+                                        info!(
+                                            "Moved task {} to project {:?} and section {:?}",
+                                            task.id, project_id, section_id
+                                        );
+                                        return Ok(Json(InteractionResponse {
+                                        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                        data: Some(InteractionResponseData{
+                                            content: Some(format!("{} Moved task to the selected project and section.", Emojis::GREEN_TICK)),
+                                            flags: Some(MessageFlags::EPHEMERAL),
+                                            ..InteractionResponseData::default()
+                                        })
+                                    }));
+                                    }
+                                    Err(e) => {
+                                        error!("Error moving task: {}", e);
+                                        return Ok(Json(InteractionResponse {
+                                        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                        data: Some(InteractionResponseData{
+                                            content: Some(format!("{} Failed to move task: {}", Emojis::RED_X, e)),
+                                            flags: Some(MessageFlags::EPHEMERAL),
+                                            ..InteractionResponseData::default()
+                                        })
+                                    }));
+                                    }
+                                }
+                            }
+                            None => {
+                                warn!("No task ID provided in section_select custom ID");
+                                InteractionResponse {
+                                    kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                                    data: Some(InteractionResponseData{
+                                        content: Some("No task ID provided.".to_string()),
+                                        flags: Some(MessageFlags::EPHEMERAL),
+                                        ..InteractionResponseData::default()
+                                    })
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        warn!("No handler for message component command: {}", command);
+                        InteractionResponse {
+                            kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+                            data: Some(InteractionResponseData{
+                                content: Some(format!("No handler for message component command: `{}`", command)),
+                                flags: Some(MessageFlags::EPHEMERAL),
+                                ..InteractionResponseData::default()
+                            })
+                        }
+                    }
+                }
+            } else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         }
         _ => return Err(StatusCode::NOT_IMPLEMENTED),

@@ -92,3 +92,26 @@ pub async fn create_task(client: &TodoistHttpClient, new_task: NewTask) -> Resul
         .await
         .map_err(|e| anyhow!(e))
 }
+
+#[derive(Serialize, Debug, Default)]
+pub struct MoveTask {
+    #[serde(skip_serializing)]
+    pub task_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+}
+
+pub async fn move_task(client: &TodoistHttpClient, move_task: MoveTask) -> Result<Task> {
+    client
+        .post(&format!("/tasks/{}/move", move_task.task_id))
+        .json(&move_task)
+        .send()
+        .await?
+        .json()
+        .await
+        .map_err(|e| anyhow!(e))
+}

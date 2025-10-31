@@ -161,10 +161,9 @@ pub async fn add_reminder(
             let section_component = ActionRowBuilder::new().component(section_component).build();
 
             let header = TextDisplayBuilder::new(format!(
-                "{} Created task:\n**{}**\n{}",
+                "{} Created task:\n**{}**",
                 Emojis::GREEN_TICK,
-                new_task.content,
-                new_task.get_url()
+                new_task.content
             ))
             .build();
 
