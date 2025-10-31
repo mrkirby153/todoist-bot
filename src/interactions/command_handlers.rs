@@ -2,8 +2,11 @@ use futures::future;
 use std::sync::Arc;
 use twilight_model::channel::message::component::SelectMenuType;
 use twilight_util::builder::message::ActionRowBuilder;
+use twilight_util::builder::message::ButtonBuilder;
+use twilight_util::builder::message::SectionBuilder;
 use twilight_util::builder::message::SelectMenuBuilder;
 use twilight_util::builder::message::SelectMenuOptionBuilder;
+use twilight_util::builder::message::SeparatorBuilder;
 
 use crate::AppState;
 use crate::claude::message_create;
@@ -19,6 +22,9 @@ use chrono::Local;
 use todoist_derive::Command;
 use tracing::debug;
 use twilight_model::application::interaction::InteractionData;
+use twilight_model::channel::message::EmojiReactionType;
+use twilight_model::channel::message::component::ButtonStyle;
+use twilight_model::channel::message::component::SeparatorSpacingSize;
 use twilight_model::http::interaction::InteractionResponseData;
 use twilight_model::http::interaction::InteractionResponseType;
 use twilight_model::id::Id;
@@ -154,16 +160,30 @@ pub async fn add_reminder(
             let section_component = section_component.build();
             let section_component = ActionRowBuilder::new().component(section_component).build();
 
+            let header = TextDisplayBuilder::new(format!(
+                "{} Created task:\n**{}**\n{}",
+                Emojis::GREEN_TICK,
+                new_task.content,
+                new_task.get_url()
+            ))
+            .build();
+
+            let accessory = ButtonBuilder::new(ButtonStyle::Link)
+                .label("View Task")
+                .url(new_task.get_url())
+                .emoji(EmojiReactionType::Unicode {
+                    name: "🔗".to_string(),
+                })
+                .build();
+
             let container = ContainerBuilder::new()
                 .accent_color(Some(0x00AA00))
+                .component(SectionBuilder::new(accessory).component(header).build())
                 .component(
-                    TextDisplayBuilder::new(format!(
-                        "{} Created task: **{}**\n{}",
-                        Emojis::GREEN_TICK,
-                        new_task.content,
-                        new_task.get_url()
-                    ))
-                    .build(),
+                    SeparatorBuilder::new()
+                        .divider(true)
+                        .spacing(SeparatorSpacingSize::Large)
+                        .build(),
                 )
                 .component(section_component)
                 .build();
