@@ -3,7 +3,7 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use twilight_model::{
     application::{
         command::{Command, CommandType},
-        interaction::Interaction,
+        interaction::{Interaction, InteractionContextType},
     },
     http::interaction::InteractionResponse,
     oauth::ApplicationIntegrationType,
@@ -60,6 +60,11 @@ impl<T> From<&ContextCommands<T>> for Vec<Command> {
                     .integration_types([
                         ApplicationIntegrationType::UserInstall,
                         ApplicationIntegrationType::GuildInstall,
+                    ])
+                    .contexts(vec![
+                        InteractionContextType::Guild,
+                        InteractionContextType::BotDm,
+                        InteractionContextType::PrivateChannel,
                     ])
                     .build()
             })

@@ -5,6 +5,7 @@ use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 use crate::interactions::commands::arguments::CommandOption;
 use tracing::debug;
 use twilight_model::application::command::Command as TwilightCommand;
+use twilight_model::application::interaction::InteractionContextType;
 use twilight_model::application::interaction::application_command::{
     CommandData, CommandDataOption, CommandOptionValue,
 };
@@ -223,7 +224,12 @@ where
                             name,
                             info.2,
                             twilight_model::application::command::CommandType::ChatInput,
-                        );
+                        )
+                        .contexts(vec![
+                            InteractionContextType::Guild,
+                            InteractionContextType::BotDm,
+                            InteractionContextType::PrivateChannel,
+                        ]);
                         for option in &info.1 {
                             command = command.option(option.clone());
                         }
@@ -233,7 +239,12 @@ where
                             name,
                             "No description provided",
                             twilight_model::application::command::CommandType::ChatInput,
-                        );
+                        )
+                        .contexts(vec![
+                            InteractionContextType::Guild,
+                            InteractionContextType::BotDm,
+                            InteractionContextType::PrivateChannel,
+                        ]);
                         for (grandchild_name, grandchild) in subcommand_or_group.iter() {
                             match grandchild {
                                 CommandTree::Leaf(info) => {
