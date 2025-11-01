@@ -29,6 +29,10 @@ ADD docker_entrypoint.sh /app/docker_entrypoint.sh
 ADD emoji/ /app/emoji/
 RUN chmod +x /app/docker_entrypoint.sh
 
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "--"]
 
 CMD ["/app/docker_entrypoint.sh"]
 EXPOSE 3000
