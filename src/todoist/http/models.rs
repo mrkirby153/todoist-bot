@@ -4,6 +4,8 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::get_timezone_override;
+
 #[derive(Debug, Deserialize)]
 pub struct CursorResponse<T> {
     pub results: Vec<T>,
@@ -82,11 +84,19 @@ impl TryFrom<Due> for DateTime<FixedOffset> {
             } else {
                 let naive = naive_date
                     .and_hms_opt(0, 0, 0)
-                    .ok_or(DueParseError::InvalidFormat)?
-                    .and_local_timezone(Local)
-                    .single()
-                    .ok_or(DueParseError::InvalidFormat)?
-                    .fixed_offset();
+                    .ok_or(DueParseError::InvalidFormat)?;
+                let naive = match get_timezone_override() {
+                    Some(tz) => naive
+                        .and_local_timezone(tz)
+                        .single()
+                        .ok_or(DueParseError::InvalidFormat)?
+                        .fixed_offset(),
+                    None => naive
+                        .and_local_timezone(Local)
+                        .single()
+                        .ok_or(DueParseError::InvalidFormat)?
+                        .fixed_offset(),
+                };
                 return Ok(naive);
             }
         }

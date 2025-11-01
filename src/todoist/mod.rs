@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Local, Utc};
+use chrono_tz::Tz;
 use serde::Serialize;
 use std::result::Result as StdResult;
+use tracing::debug;
 
 use crate::todoist::http::{
     TodoistHttpClient,
@@ -10,22 +12,36 @@ use crate::todoist::http::{
 
 pub mod http;
 
-pub async fn get_tasks_due_today<Z>(client: &TodoistHttpClient, timezone: Z) -> Result<Vec<Task>>
-where
-    Z: TimeZone,
-{
+pub async fn get_tasks_due_today(
+    client: &TodoistHttpClient,
+    timezone: Option<Tz>,
+) -> Result<Vec<Task>> {
     let all_tasks = client.get_all::<Task>("/tasks").await?;
     let mut today_tasks = vec![];
 
-    let today = Utc::now().with_timezone(&timezone).fixed_offset();
+    let today = match timezone {
+        Some(tz) => Utc::now().with_timezone(&tz).fixed_offset(),
+        None => Utc::now().with_timezone(&Local).fixed_offset(),
+    };
     let today_date = today.date_naive();
+    debug!(
+        "Today's date in timezone {:?} is {:?}",
+        timezone, today_date
+    );
 
     for task in all_tasks {
         if let Some(due) = &task.due {
             let due_date: StdResult<DateTime<FixedOffset>, _> = due.clone().try_into();
             if let Ok(due_date) = due_date {
-                let due_date_in_tz = due_date.with_timezone(&timezone);
-                if due_date_in_tz.date_naive() == today_date {
+                let due_date_in_tz = match timezone {
+                    Some(tz) => due_date.with_timezone(&tz).date_naive(),
+                    None => due_date.with_timezone(&Local).date_naive(),
+                };
+                debug!(
+                    "Task '{}' due date in timezone {:?} is {:?}",
+                    task.id, timezone, due_date_in_tz
+                );
+                if due_date_in_tz == today_date {
                     today_tasks.push(task);
                 }
             } else {

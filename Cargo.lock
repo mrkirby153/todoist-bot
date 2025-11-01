@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "todoist-bot"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2108,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "todoist_derive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "darling",
  "proc-macro2",

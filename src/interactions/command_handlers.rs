@@ -14,12 +14,12 @@ use crate::claude::message_create;
 use crate::claude::models::InputMessage;
 use crate::claude::models::MessageRequest;
 use crate::emoji::Emojis;
+use crate::get_timezone_override;
 use crate::todoist;
 use crate::todoist::NewTask;
 use crate::todoist::http::models::Due;
 use chrono::DateTime;
 use chrono::FixedOffset;
-use chrono::Local;
 use todoist_derive::Command;
 use tracing::debug;
 use twilight_model::application::interaction::InteractionData;
@@ -196,7 +196,10 @@ pub async fn handle_today(
     _interaction: Arc<Interaction>,
     state: Arc<AppState>,
 ) -> Result<InteractionResponse> {
-    let tasks = todoist::get_tasks_due_today(&state.todoist_client, Local).await?;
+    let timezone = get_timezone_override();
+    debug!("Using timezone: {:?}", timezone);
+
+    let tasks = todoist::get_tasks_due_today(&state.todoist_client, timezone).await?;
 
     let accent_color = if tasks.is_empty() {
         0x00AA00 // Green for no tasks

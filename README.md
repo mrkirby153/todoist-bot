@@ -10,3 +10,4 @@ The bot is configured through environment variables
 - `INTERACTION_KEY` - The interactions public key
 - `TODOIST_API_TOKEN` - Your Todoist API token
 - `CLAUDE_API_TOKEN` - An Anthropic/Claude API token
+- `TZ_OVERRIDE` - An optional timezone to override the local timezone

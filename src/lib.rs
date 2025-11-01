@@ -32,3 +32,11 @@ pub struct AppState {
 pub async fn retrieve_current_user(client: &Client) -> Result<CurrentUser> {
     Ok(client.current_user().await?.model().await?)
 }
+
+/// Gets the configured timezone override from the environment, if any.
+pub fn get_timezone_override() -> Option<chrono_tz::Tz> {
+    std::env::var("TZ_OVERRIDE")
+        .map(|tz| tz.parse::<chrono_tz::Tz>().ok())
+        .ok()
+        .flatten()
+}
