@@ -1,6 +1,10 @@
 use anyhow::Result;
 use futures::future;
 use std::sync::Arc;
+use twilight_model::channel::Message;
+use twilight_model::channel::message::Component;
+use twilight_model::channel::message::component::Container;
+use twilight_model::channel::message::component::Section;
 use twilight_model::channel::message::component::SelectMenuType;
 use twilight_util::builder::message::ActionRowBuilder;
 use twilight_util::builder::message::ButtonBuilder;
@@ -64,8 +68,7 @@ pub async fn add_reminder(
         });
     }
     let target_message = target_message.unwrap();
-    let content = &target_message.content;
-    // TODO: Support embeds and ComponentsV2
+    let content = message_to_string(target_message);
     debug!("Asking Claude to create reminder from text: {}", content);
 
     let response = message_create(
@@ -239,4 +242,86 @@ pub async fn handle_today(
             ..Default::default()
         }),
     })
+}
+
+fn message_to_string(message: &Message) -> String {
+    let mut content = String::new();
+    content.push_str(message.content.as_str());
+
+    // Handle embeds
+    for embed in &message.embeds {
+        let mut embed_content = String::new();
+        if let Some(title) = &embed.title {
+            embed_content.push_str(title);
+            embed_content.push('\n');
+        }
+        if let Some(description) = &embed.description {
+            embed_content.push_str(description);
+            embed_content.push('\n');
+        }
+        embed_content.push_str(
+            embed
+                .fields
+                .iter()
+                .map(|field| format!("{}: {}", field.name, field.value))
+                .collect::<Vec<String>>()
+                .join("\n")
+                .as_str(),
+        );
+        content.push_str(embed_content.as_str());
+        content.push('\n');
+    }
+
+    // Handle cv2 components
+    for component in &message.components {
+        let mut component_content = String::new();
+
+        if let Some(comp_str) = handle_component(component) {
+            component_content.push_str(comp_str.as_str());
+
+            content.push_str(component_content.as_str());
+            content.push('\n');
+        }
+    }
+    content
+}
+
+fn handle_component(component: &Component) -> Option<String> {
+    debug!("Handling component: {:#?}", component);
+    match component {
+        Component::Section(section) => handle_section(section),
+        Component::Container(container) => handle_container(container),
+        Component::TextDisplay(text) => Some(text.content.clone()),
+        _ => None,
+    }
+}
+
+fn handle_container(container: &Container) -> Option<String> {
+    let mut container_contents = String::new();
+    for comp in &container.components {
+        if let Some(comp_str) = handle_component(comp) {
+            container_contents.push_str(comp_str.as_str());
+            container_contents.push('\n');
+        }
+    }
+    if !container_contents.is_empty() {
+        Some(container_contents)
+    } else {
+        None
+    }
+}
+
+fn handle_section(section: &Section) -> Option<String> {
+    let mut section_contents = String::new();
+    for comp in &section.components {
+        if let Some(comp_str) = handle_component(comp) {
+            section_contents.push_str(comp_str.as_str());
+            section_contents.push('\n');
+        }
+    }
+    if !section_contents.is_empty() {
+        Some(section_contents)
+    } else {
+        None
+    }
 }

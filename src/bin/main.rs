@@ -4,6 +4,7 @@ use anyhow::Result;
 use axum::Router;
 use axum::routing::{get, post};
 use dotenv::dotenv;
+use rustls::crypto::CryptoProvider;
 use thiserror::Error;
 use todoist_bot::claude::ClaudeHttpClient;
 use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
@@ -35,6 +36,8 @@ enum MissingEnvironemntVariable {
 async fn main() -> Result<()> {
     dotenv().ok();
     tracing_subscriber::fmt::init();
+    CryptoProvider::install_default(rustls::crypto::ring::default_provider())
+        .expect("Failed to install default crypto provider");
 
     let todoist_token =
         env::var("TODOIST_API_TOKEN").map_err(|_| MissingEnvironemntVariable::TodoistApiToken)?;
