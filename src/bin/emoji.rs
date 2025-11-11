@@ -12,6 +12,8 @@ use twilight_model::{
     id::{Id, marker::ApplicationMarker},
 };
 
+use rustls::crypto::CryptoProvider;
+
 use base64::{Engine as _, engine::general_purpose};
 use color_print::cprintln;
 
@@ -41,6 +43,8 @@ enum Error {
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
+    CryptoProvider::install_default(rustls::crypto::ring::default_provider())
+        .expect("Failed to install default crypto provider");
     let args = Args::parse();
 
     let in_path = Path::new(&args.in_dir);

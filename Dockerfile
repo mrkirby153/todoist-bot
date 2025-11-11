@@ -16,7 +16,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release
 
-FROM debian:bookworm-slim AS runner
+FROM ubuntu:24.04 AS runner
 
 RUN apt-get update && apt-get install -y ca-certificates && apt-get clean
 
