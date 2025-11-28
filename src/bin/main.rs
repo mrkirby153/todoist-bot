@@ -45,7 +45,11 @@ async fn main() -> Result<()> {
 
     let claude_token =
         env::var("CLAUDE_API_TOKEN").map_err(|_| MissingEnvironemntVariable::ClaudeApiToken)?;
-    let claude_client = Arc::new(ClaudeHttpClient::new(&claude_token, "claude-sonnet-4-5"));
+
+    let claude_model = env::var("CLAUDE_MODEL").unwrap_or("claude-sonnet-4-5".to_string());
+    info!("Using Claude model: {}", claude_model);
+
+    let claude_client = Arc::new(ClaudeHttpClient::new(&claude_token, &claude_model));
 
     let interaction_key =
         env::var("INTERACTION_KEY").map_err(|_| MissingEnvironemntVariable::InteractionKey)?;
