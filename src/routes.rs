@@ -5,8 +5,10 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use tokio::time::timeout;
+use tokio::time;
+use tokio::{select, task::JoinHandle, time::timeout};
 use tracing::{debug, error, info, warn};
+use twilight_http::Client;
 use twilight_model::http::interaction::InteractionResponseType;
 use twilight_model::{
     application::interaction::InteractionData, channel::message::MessageFlags,
@@ -76,68 +78,33 @@ pub async fn interaction_callback(
 
                 let resolved_slash_command = resolve_command_path(command);
 
-                let slash_result = if let Some((command_path, command_data)) =
-                    resolved_slash_command
-                {
-                    debug!("Resolved command path: {}", command_path);
+                let slash_result =
+                    if let Some((command_path, command_data)) = resolved_slash_command {
+                        debug!("Resolved command path: {}", command_path);
 
-                    let state = Arc::new(state.clone());
-                    let callback_state = Arc::clone(&state);
-                    let interaction = Arc::clone(&interaction);
-                    let callback_interaction = Arc::clone(&interaction);
+                        let state = Arc::new(state.clone());
+                        let callback_state = Arc::clone(&state);
+                        let interaction = Arc::clone(&interaction);
+                        let callback_interaction = Arc::clone(&interaction);
 
-                    let mut handle = tokio::spawn(async move {
-                        let inner_state = Arc::clone(&state);
-                        state
-                            .slash_commands
-                            .execute(&command_path, interaction, command_data, inner_state)
-                            .await
-                    });
+                        let handle = tokio::spawn(async move {
+                            let inner_state = Arc::clone(&state);
+                            state
+                                .slash_commands
+                                .execute(&command_path, interaction, command_data, inner_state)
+                                .await
+                        });
 
-                    match timeout(Duration::from_secs(1), &mut handle).await {
-                        Ok(Ok(resp)) => resp,
-                        Ok(Err(e)) => {
-                            error!("Error executing slash command: {}", e);
-                            None
-                        }
-                        Err(_) => {
-                            tokio::spawn(async move {
-                                let state = callback_state;
-                                let interaction = callback_interaction;
-                                let resp = handle.await.unwrap_or(None);
-                                if let Some(response) = resp {
-                                    let data = response.data.unwrap_or_default();
-
-                                    let update_response = state
-                                        .client
-                                        .interaction(state.app_id)
-                                        .update_response(&interaction.token)
-                                        .attachments(&data.attachments.unwrap_or_default())
-                                        .content(data.content.as_deref())
-                                        .embeds(data.embeds.as_deref())
-                                        .components(data.components.as_deref())
-                                        .await;
-
-                                    if let Err(e) = update_response {
-                                        error!(
-                                            "Failed to send delayed slash command response: {}",
-                                            e
-                                        );
-                                    }
-                                }
-                            });
-                            Some(InteractionResponse {
-                                kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource,
-                                data: Some(InteractionResponseData{
-                                    flags: Some(MessageFlags::EPHEMERAL),
-                                    ..InteractionResponseData::default()
-                                })
-                            })
-                        }
-                    }
-                } else {
-                    None
-                };
+                        handle_response(
+                            handle,
+                            callback_state.client.clone(),
+                            callback_state,
+                            callback_interaction,
+                        )
+                        .await
+                    } else {
+                        None
+                    };
 
                 if let Some(response) = slash_result {
                     debug!("Returning response: {:?}", response);
@@ -148,8 +115,8 @@ pub async fn interaction_callback(
                     let interaction = Arc::clone(&interaction);
                     let handler_interaction = Arc::clone(&interaction);
 
-                    let mut handle = tokio::spawn(async move {
-                        handler(interaction, state).await.unwrap_or_else(|e| {
+                    let handle = tokio::spawn(async move {
+                        Some(handler(interaction, state).await.unwrap_or_else(|e| {
                             let container = ContainerBuilder::new()
                                 .accent_color(Some(0xFF0000))
                                 .component(
@@ -168,69 +135,26 @@ pub async fn interaction_callback(
                                     ..Default::default()
                                 }),
                             }
-                        })
+                        }))
                     });
 
-                    match timeout(Duration::from_secs(1), &mut handle).await {
-                        Ok(Ok(resp)) => {
-                            debug!("Command handler returned quickly.");
-                            resp
-                        }
-                        Ok(Err(e)) => {
-                            error!("Error executing command handler: {}", e);
-                            InteractionResponse {
-                                kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
-                                data: Some(InteractionResponseData{
-                                    content: Some("An error occurred while processing your command.".to_string()),
-                                    flags: Some(MessageFlags::EPHEMERAL),
-                                    ..InteractionResponseData::default()
-                                })
-                            }
-                        }
-                        Err(_) => {
-                            debug!("Command handler timed out");
-                            tokio::spawn(async move {
-                                debug!("Preparing to send delayed response");
-                                let resp = handle.await.unwrap_or(InteractionResponse {
-                                            kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
-                                            data: Some(InteractionResponseData{
-                                                content: Some("An error occurred while processing your command.".to_string()),
-                                                flags: Some(MessageFlags::EPHEMERAL),
-                                                ..InteractionResponseData::default()
-                                            })
-                                        });
-                                debug!("Sending delayed response");
-
-                                let data = resp.data.unwrap_or_default();
-
-                                debug!(
-                                    "Delayed response: {}",
-                                    serde_json::to_string_pretty(&data).unwrap_or_default()
-                                );
-
-                                let response = handler_state
-                                    .client
-                                    .interaction(handler_state.app_id)
-                                    .update_response(&handler_interaction.token)
-                                    .attachments(&data.attachments.unwrap_or_default())
-                                    .content(data.content.as_deref())
-                                    .embeds(data.embeds.as_deref())
-                                    .components(data.components.as_deref())
-                                    .flags(data.flags.unwrap_or(MessageFlags::empty()))
-                                    .await;
-                                if let Err(e) = response {
-                                    error!("Failed to send delayed response: {}", e);
-                                }
-                            });
-                            InteractionResponse {
-                                kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource,
-                                data: Some(InteractionResponseData{
-                                    flags: Some(MessageFlags::EPHEMERAL),
-                                    ..InteractionResponseData::default()
-                                })
-                            }
-                        }
-                    }
+                    handle_response(
+                        handle,
+                        handler_state.client.clone(),
+                        handler_state,
+                        handler_interaction,
+                    )
+                    .await
+                    .unwrap_or_else(|| InteractionResponse {
+                        kind: InteractionResponseType::ChannelMessageWithSource,
+                        data: Some(InteractionResponseData {
+                            content: Some(
+                                "An error occurred while processing your command.".to_string(),
+                            ),
+                            flags: Some(MessageFlags::EPHEMERAL),
+                            ..InteractionResponseData::default()
+                        }),
+                    })
                 } else {
                     warn!("No handler found for command: {}", name);
                     InteractionResponse {
@@ -366,4 +290,62 @@ pub async fn interaction_callback(
     debug!("Response JSON: {}", as_json);
 
     Ok(Json(resp))
+}
+
+async fn handle_response(
+    mut handle: JoinHandle<Option<InteractionResponse>>,
+    client: Arc<Client>,
+    state: Arc<AppState>,
+    interaction: Arc<Interaction>,
+) -> Option<InteractionResponse> {
+    select! {
+        result = &mut handle => {
+            match result {
+                Ok(resp) => {
+                    resp
+                }
+                Err(e) => {
+                    Some(InteractionResponse {
+                        kind: InteractionResponseType::ChannelMessageWithSource,
+                        data: Some(InteractionResponseData{
+                            content: Some(format!("{} An error occurred while processing your command: {}", Emojis::RED_X, e)),
+                            flags: Some(MessageFlags::EPHEMERAL),
+                            ..InteractionResponseData::default()
+                        })
+                    })
+                }
+            }
+        }
+        _  = time::sleep(Duration::from_secs(1)) => {
+            debug!("Handler timed out. Returning deferred response.");
+            tokio::spawn(async move {
+                let resp = timeout(Duration::from_mins(10), handle).await.ok().and_then(|r| r.ok()).flatten();
+                if let Some(response) = resp {
+                    let data = response.data.unwrap_or_default();
+                    let update_response = client
+                        .interaction(state.app_id)
+                        .update_response(&interaction.token)
+                        .attachments(&data.attachments.unwrap_or_default())
+                        .content(data.content.as_deref())
+                        .embeds(data.embeds.as_deref())
+                        .components(data.components.as_deref())
+                        .await;
+
+                    if let Err(e) = update_response {
+                        error!(
+                            "Failed to send delayed response: {}",
+                            e
+                        );
+                    }
+                }
+            });
+            Some(InteractionResponse {
+                kind: InteractionResponseType::DeferredChannelMessageWithSource,
+                data: Some(InteractionResponseData{
+                    flags: Some(MessageFlags::EPHEMERAL),
+                    ..InteractionResponseData::default()
+                })
+            })
+        }
+    }
 }

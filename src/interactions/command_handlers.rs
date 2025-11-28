@@ -24,6 +24,7 @@ use crate::todoist::NewTask;
 use crate::todoist::http::models::Due;
 use chrono::DateTime;
 use chrono::FixedOffset;
+use std::env;
 use todoist_derive::Command;
 use tracing::debug;
 use twilight_model::application::interaction::InteractionData;
@@ -85,6 +86,21 @@ pub async fn add_reminder(
                     .to_string(),
             ),
         }).await?;
+
+    if env::var("DRY_RUN").unwrap_or("false".to_string()) == "true" {
+        debug!("Dry run enabled, not creating task in Todoist.");
+        return Ok(InteractionResponse {
+            kind: InteractionResponseType::ChannelMessageWithSource,
+            data: Some(InteractionResponseData {
+                content: Some(format!(
+                    "{} (Dry Run) Created reminder: **{}**",
+                    Emojis::GREEN_TICK,
+                    response
+                )),
+                ..Default::default()
+            }),
+        });
+    }
 
     debug!("Claude response: {}", response);
     let projects = todoist::get_projects(&state.todoist_client).await?;
