@@ -1,16 +1,16 @@
-FROM rust:1.90 as base
+FROM rust:1.91 AS base
 
 RUN mkdir /app
 WORKDIR /app
 
 RUN cargo install cargo-chef --locked
 
-FROM base as planner
+FROM base AS planner
 WORKDIR /app
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM base as builder
+FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
