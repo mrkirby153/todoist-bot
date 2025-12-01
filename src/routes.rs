@@ -329,6 +329,7 @@ async fn handle_response(
                         .content(data.content.as_deref())
                         .embeds(data.embeds.as_deref())
                         .components(data.components.as_deref())
+                        .flags(data.flags.unwrap_or(MessageFlags::empty()))
                         .await;
 
                     if let Err(e) = update_response {
