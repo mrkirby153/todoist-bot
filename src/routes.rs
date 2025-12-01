@@ -23,7 +23,7 @@ use twilight_util::builder::message::{ContainerBuilder, TextDisplayBuilder};
 use crate::{
     AppState,
     emoji::Emojis,
-    interactions::commands::resolve_command_path,
+    interactions::resolve_command_path,
     todoist::{MoveTask, move_task},
 };
 
@@ -319,7 +319,7 @@ async fn handle_response(
         _  = time::sleep(Duration::from_secs(1)) => {
             debug!("Handler timed out. Returning deferred response.");
             tokio::spawn(async move {
-                let resp = timeout(Duration::from_mins(10), handle).await.ok().and_then(|r| r.ok()).flatten();
+                let resp = timeout(Duration::from_secs(10 * 60), handle).await.ok().and_then(|r| r.ok()).flatten();
                 if let Some(response) = resp {
                     let data = response.data.unwrap_or_default();
                     let update_response = client

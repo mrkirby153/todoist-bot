@@ -10,13 +10,12 @@ use todoist_bot::claude::ClaudeHttpClient;
 use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
 use tokio::net::TcpListener;
 use tracing::info;
+use twilight_commands::executor::{ContextCommands, SlashCommands};
 use twilight_http::Client;
 use twilight_model::application::command::Command;
 use twilight_model::id::Id;
 
 use todoist_bot::emoji::Emojis;
-use todoist_bot::interactions::ContextCommands;
-use todoist_bot::interactions::commands::CommandExecutor;
 use todoist_bot::interactions::verifier::Verifier;
 use todoist_bot::todoist::http::TodoistHttpClient;
 
@@ -105,7 +104,7 @@ async fn main() -> Result<()> {
 async fn update_commands(
     client: &Client,
     context_commands: &ContextCommands<AppState>,
-    slash_commands: &CommandExecutor<AppState>,
+    slash_commands: &SlashCommands<AppState>,
     guild_id: Option<String>,
 ) -> Result<()> {
     let application_id = {
@@ -132,12 +131,12 @@ async fn update_commands(
     Ok(())
 }
 
-fn register_commands() -> (ContextCommands<AppState>, CommandExecutor<AppState>) {
-    let mut context_commands = ContextCommands::new();
+fn register_commands() -> (ContextCommands<AppState>, SlashCommands<AppState>) {
+    let mut context_commands = ContextCommands::default();
 
     context_commands.register("Add To-Do", interactions::command_handlers::add_reminder);
 
-    let mut command_executor = CommandExecutor::new();
+    let mut command_executor = SlashCommands::default();
     command_executor.register(interactions::command_handlers::handle_today);
 
     (context_commands, command_executor)

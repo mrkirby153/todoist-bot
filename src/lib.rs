@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use twilight_commands::executor::{ContextCommands, SlashCommands};
 use twilight_http::Client;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 use twilight_model::user::CurrentUser;
 
 use crate::claude::ClaudeHttpClient;
-use crate::interactions::ContextCommands;
-use crate::interactions::commands::CommandExecutor;
 use crate::interactions::verifier::Verifier;
 use crate::todoist::http::TodoistHttpClient;
 
@@ -23,7 +22,7 @@ pub struct AppState {
     pub verifier: Arc<Verifier>,
     pub client: Arc<Client>,
     pub context_commands: Arc<ContextCommands<AppState>>,
-    pub slash_commands: Arc<CommandExecutor<AppState>>,
+    pub slash_commands: Arc<SlashCommands<AppState>>,
     pub todoist_client: Arc<TodoistHttpClient>,
     pub claude_client: Arc<ClaudeHttpClient>,
 }

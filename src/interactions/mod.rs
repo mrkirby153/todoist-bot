@@ -1,75 +1,47 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use tracing::debug;
 
-use twilight_model::{
-    application::{
-        command::{Command, CommandType},
-        interaction::{Interaction, InteractionContextType},
-    },
-    http::interaction::InteractionResponse,
-    oauth::ApplicationIntegrationType,
+use twilight_model::application::interaction::application_command::{
+    CommandData, CommandDataOption, CommandOptionValue,
 };
-use twilight_util::builder::command::CommandBuilder;
 
 pub mod command_handlers;
-pub mod commands;
 pub mod verifier;
 
-type InteractionResult = anyhow::Result<InteractionResponse>;
+pub fn resolve_command_path(interaction: &CommandData) -> Option<(String, Vec<CommandDataOption>)> {
+    debug!("Resolving command path for interaction: {:?}", interaction);
+    let mut path = vec![interaction.name.clone()];
 
-type AsyncHandler<T> = Box<
-    dyn Fn(Arc<Interaction>, Arc<T>) -> Pin<Box<dyn Future<Output = InteractionResult> + Send>>
-        + Send
-        + Sync,
->;
+    if !is_option_sub(&interaction.options) {
+        return Some((path.join(" "), interaction.options.clone()));
+    }
 
-/// Commands that can be used via a context menu.
-#[derive(Default)]
-pub struct ContextCommands<T> {
-    commands: HashMap<String, Arc<AsyncHandler<T>>>,
-}
-
-impl<T> ContextCommands<T> {
-    pub fn new() -> Self {
-        Self {
-            commands: HashMap::new(),
+    let option = &interaction.options[0];
+    match &option.value {
+        CommandOptionValue::SubCommand(options) => {
+            path.push(option.name.clone());
+            Some((path.join(" "), options.clone()))
         }
-    }
-
-    pub fn register<F, Fut>(&mut self, command: &str, handler: F)
-    where
-        F: Fn(Arc<Interaction>, Arc<T>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = InteractionResult> + Send + 'static,
-    {
-        let handler = Box::new(move |interaction, state| {
-            Box::pin(handler(interaction, state))
-                as Pin<Box<dyn Future<Output = InteractionResult> + Send>>
-        });
-        self.commands.insert(command.to_string(), Arc::new(handler));
-    }
-
-    pub fn get(&self, name: &str) -> Option<&Arc<AsyncHandler<T>>> {
-        self.commands.get(name)
+        CommandOptionValue::SubCommandGroup(group) => {
+            let group_name = &option.name;
+            path.push(group_name.clone());
+            let subcommand = &group[0];
+            path.push(subcommand.name.clone());
+            if let CommandOptionValue::SubCommand(options) = &subcommand.value {
+                Some((path.join(" "), options.clone()))
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 
-impl<T> From<&ContextCommands<T>> for Vec<Command> {
-    fn from(context_commands: &ContextCommands<T>) -> Vec<Command> {
-        context_commands
-            .commands
-            .keys()
-            .map(|name| {
-                CommandBuilder::new(name, "", CommandType::Message)
-                    .integration_types([
-                        ApplicationIntegrationType::UserInstall,
-                        ApplicationIntegrationType::GuildInstall,
-                    ])
-                    .contexts(vec![
-                        InteractionContextType::Guild,
-                        InteractionContextType::BotDm,
-                        InteractionContextType::PrivateChannel,
-                    ])
-                    .build()
-            })
-            .collect()
+fn is_option_sub(options: &[CommandDataOption]) -> bool {
+    if options.is_empty() {
+        return false;
     }
+    matches!(
+        &options[0].value,
+        CommandOptionValue::SubCommand(_) | CommandOptionValue::SubCommandGroup(_)
+    )
 }
