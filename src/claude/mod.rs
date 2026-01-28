@@ -11,6 +11,7 @@ pub struct ClaudeHttpClient {
 }
 
 pub mod models;
+pub mod prompt;
 
 const CLAUDE_API_BASE_URL: &str = "https://api.anthropic.com/v1";
 

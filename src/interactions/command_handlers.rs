@@ -1,3 +1,4 @@
+use anyhow::Context;
 use anyhow::Result;
 use futures::future;
 use std::sync::Arc;
@@ -17,6 +18,8 @@ use crate::AppState;
 use crate::claude::message_create;
 use crate::claude::models::InputMessage;
 use crate::claude::models::MessageRequest;
+use crate::claude::prompt::PromptResponse;
+use crate::claude::prompt::get_system_prompt;
 use crate::emoji::Emojis;
 use crate::get_timezone_override;
 use crate::todoist;
@@ -79,13 +82,24 @@ pub async fn add_reminder(
             max_tokens: 1000,
             messages: vec![InputMessage {
                 role: "user".to_string(),
-                content: format!("Create a reminder to add to my to-do list from the following message: {}", content),
+                content: format!(
+                    "Create a reminder to add to my to-do list from the following message: {}",
+                    content
+                ),
             }],
-            system: Some(
-                "You are a helpful assistant that creates reminders. Use concise language, and only respond with the reminder text without any additional commentary. The reminder should be suitable for adding to a to-do list application."
-                    .to_string(),
-            ),
-        }).await?;
+            system: Some(get_system_prompt()),
+        },
+    )
+    .await?;
+
+    debug!("Claude response: {}", response);
+
+    // Decode the response
+    let response_str: String = response.into();
+    let decoded_response: PromptResponse = serde_json::from_str(response_str.as_str())
+        .context("Failed to decode response from claude")?;
+
+    debug!("Decoded response: {:#?}", decoded_response);
 
     if env::var("DRY_RUN").unwrap_or("false".to_string()) == "true" {
         debug!("Dry run enabled, not creating task in Todoist.");
@@ -93,16 +107,15 @@ pub async fn add_reminder(
             kind: InteractionResponseType::ChannelMessageWithSource,
             data: Some(InteractionResponseData {
                 content: Some(format!(
-                    "{} (Dry Run) Created reminder: **{}**",
+                    "{} (Dry Run) Created reminder: ```\n{:#?}\n```",
                     Emojis::GREEN_TICK,
-                    response
+                    decoded_response
                 )),
                 ..Default::default()
             }),
         });
     }
 
-    debug!("Claude response: {}", response);
     let projects = todoist::get_projects(&state.todoist_client).await?;
     debug!("Retrieved {} projects from Todoist", projects.len());
     let projects_with_sections = future::join_all(projects.iter().map(|project| {
@@ -122,20 +135,41 @@ pub async fn add_reminder(
     }))
     .await;
 
+    let link_text = decoded_response
+        .links
+        .map(|links| {
+            links
+                .into_iter()
+                .map(|link| format!("- {}", link))
+                .collect::<Vec<String>>()
+                .join("\n")
+        })
+        .map(|links| format!("\n\nRelated Links:\n{}", links));
+
+    let mut description = String::new();
+    description.push_str(
+        format!(
+            "Created from message: https://discord.com/channels/{}/{}/{}",
+            interaction
+                .guild_id
+                .map(|id| id.get().to_string())
+                .unwrap_or("@me".to_string()),
+            target_message.channel_id,
+            target_message.id
+        )
+        .as_str(),
+    );
+    if let Some(link_text) = link_text {
+        description.push_str(link_text.as_str());
+    }
+
     // Create the task
     let new_task = todoist::create_task(
         &state.todoist_client,
         NewTask {
-            content: format!("{}", response),
-            description: Some(format!(
-                "Created from message: https://discord.com/channels/{}/{}/{}",
-                interaction
-                    .guild_id
-                    .map(|id| id.get().to_string())
-                    .unwrap_or("@me".to_string()),
-                target_message.channel_id,
-                target_message.id
-            )),
+            content: decoded_response.title,
+            description: Some(description),
+            due_date: decoded_response.due,
             ..Default::default()
         },
     )

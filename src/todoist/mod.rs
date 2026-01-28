@@ -3,6 +3,7 @@ use chrono::{DateTime, FixedOffset, Local, Utc};
 use chrono_tz::Tz;
 use serde::Serialize;
 use std::result::Result as StdResult;
+use time::OffsetDateTime;
 use tracing::debug;
 
 use crate::todoist::http::{
@@ -90,7 +91,8 @@ pub struct NewTask {
     pub priority: Option<u8>,
     pub assignee_id: Option<String>,
     pub due_string: Option<String>,
-    pub due_date: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub due_date: Option<OffsetDateTime>,
     pub due_datetime: Option<String>,
     pub due_lang: Option<String>,
     pub duration: Option<u32>,
@@ -130,4 +132,29 @@ pub async fn move_task(client: &TodoistHttpClient, move_task: MoveTask) -> Resul
         .json()
         .await
         .map_err(|e| anyhow!(e))
+}
+
+#[derive(Serialize, Debug, Default)]
+pub struct UpdateTaskBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_string: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub due_date: Option<OffsetDateTime>,
+    pub due_datetime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee_uid: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<Option<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_unit: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deadline_date: Option<Option<String>>,
 }

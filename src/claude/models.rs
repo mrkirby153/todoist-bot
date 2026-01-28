@@ -126,3 +126,9 @@ impl Display for MessageResponse {
         Ok(())
     }
 }
+
+impl From<MessageResponse> for String {
+    fn from(value: MessageResponse) -> Self {
+        format!("{}", value)
+    }
+}
