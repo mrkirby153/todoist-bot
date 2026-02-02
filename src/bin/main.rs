@@ -6,7 +6,8 @@ use axum::routing::{get, post};
 use dotenv::dotenv;
 use rustls::crypto::CryptoProvider;
 use thiserror::Error;
-use todoist_bot::claude::ClaudeHttpClient;
+use todoist_bot::llm::Provider;
+use todoist_bot::llm::claude::ClaudeHttpClient;
 use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
 use tokio::net::TcpListener;
 use tracing::info;
@@ -42,13 +43,7 @@ async fn main() -> Result<()> {
         env::var("TODOIST_API_TOKEN").map_err(|_| MissingEnvironemntVariable::TodoistApiToken)?;
     let todoist_client = Arc::new(TodoistHttpClient::new(&todoist_token));
 
-    let claude_token =
-        env::var("CLAUDE_API_TOKEN").map_err(|_| MissingEnvironemntVariable::ClaudeApiToken)?;
-
-    let claude_model = env::var("CLAUDE_MODEL").unwrap_or("claude-sonnet-4-5".to_string());
-    info!("Using Claude model: {}", claude_model);
-
-    let claude_client = Arc::new(ClaudeHttpClient::new(&claude_token, &claude_model));
+    let llm_provider = initialize_llm_provider()?;
 
     let interaction_key =
         env::var("INTERACTION_KEY").map_err(|_| MissingEnvironemntVariable::InteractionKey)?;
@@ -73,7 +68,7 @@ async fn main() -> Result<()> {
         context_commands,
         slash_commands,
         todoist_client,
-        claude_client,
+        llm_provider,
     };
 
     Emojis::initialize("emojis.json")?;
@@ -140,4 +135,25 @@ fn register_commands() -> (ContextCommands<AppState>, SlashCommands<AppState>) {
     command_executor.register(interactions::command_handlers::handle_today);
 
     (context_commands, command_executor)
+}
+
+fn initialize_llm_provider() -> Result<Arc<Provider>> {
+    let llm_provider = env::var("LLM_PROVIDER")
+        .ok()
+        .unwrap_or("claude".to_string())
+        .to_lowercase();
+    match llm_provider.as_str() {
+        "claude" => initialize_claude(),
+        other => Err(anyhow::anyhow!("Unsupported LLM provider: {}", other)),
+    }
+}
+
+fn initialize_claude() -> Result<Arc<Provider>> {
+    let claude_token =
+        env::var("CLAUDE_API_TOKEN").map_err(|_| MissingEnvironemntVariable::ClaudeApiToken)?;
+    let claude_model = env::var("CLAUDE_MODEL").unwrap_or("claude-sonnet-4-5".to_string());
+    info!("Using Claude model: {}", claude_model);
+
+    let claude_client = ClaudeHttpClient::new(&claude_token, &claude_model);
+    Ok(Arc::new(claude_client))
 }

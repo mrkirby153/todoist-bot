@@ -1,7 +1,5 @@
 const SYSTEM_PROMPT: &str = include_str!("system_prompt.txt");
 
-use serde::Deserialize;
-use time::OffsetDateTime;
 use tracing::debug;
 
 use crate::get_timezone_override;
@@ -16,12 +14,4 @@ pub fn get_system_prompt() -> String {
     let prompt = prompt.replace("{{CURRENT_TIME}}", &chrono::Local::now().to_rfc3339());
     debug!("Using system prompt: \n{}", prompt);
     prompt
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PromptResponse {
-    pub title: String,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub due: Option<OffsetDateTime>,
-    pub links: Option<Vec<String>>,
 }

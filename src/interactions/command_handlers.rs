@@ -1,4 +1,3 @@
-use anyhow::Context;
 use anyhow::Result;
 use futures::future;
 use std::sync::Arc;
@@ -15,11 +14,6 @@ use twilight_util::builder::message::SelectMenuOptionBuilder;
 use twilight_util::builder::message::SeparatorBuilder;
 
 use crate::AppState;
-use crate::claude::message_create;
-use crate::claude::models::InputMessage;
-use crate::claude::models::MessageRequest;
-use crate::claude::prompt::PromptResponse;
-use crate::claude::prompt::get_system_prompt;
 use crate::emoji::Emojis;
 use crate::get_timezone_override;
 use crate::todoist;
@@ -75,31 +69,12 @@ pub async fn add_reminder(
     let content = message_to_string(target_message);
     debug!("Asking Claude to create reminder from text: {}", content);
 
-    let response = message_create(
-        state.claude_client.as_ref(),
-        MessageRequest {
-            model: state.claude_client.model.clone(),
-            max_tokens: 1000,
-            messages: vec![InputMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Create a reminder to add to my to-do list from the following message: {}",
-                    content
-                ),
-            }],
-            system: Some(get_system_prompt()),
-        },
-    )
-    .await?;
+    let response = state
+        .llm_provider
+        .generate_reminder(content.as_str())
+        .await?;
 
-    debug!("Claude response: {}", response);
-
-    // Decode the response
-    let response_str: String = response.into();
-    let decoded_response: PromptResponse = serde_json::from_str(response_str.as_str())
-        .context("Failed to decode response from claude")?;
-
-    debug!("Decoded response: {:#?}", decoded_response);
+    debug!("DecLLModed response: {:#?}", response);
 
     if env::var("DRY_RUN").unwrap_or("false".to_string()) == "true" {
         debug!("Dry run enabled, not creating task in Todoist.");
@@ -109,7 +84,7 @@ pub async fn add_reminder(
                 content: Some(format!(
                     "{} (Dry Run) Created reminder: ```\n{:#?}\n```",
                     Emojis::GREEN_TICK,
-                    decoded_response
+                    response
                 )),
                 ..Default::default()
             }),
@@ -135,7 +110,7 @@ pub async fn add_reminder(
     }))
     .await;
 
-    let link_text = decoded_response
+    let link_text = response
         .links
         .map(|links| {
             links
@@ -167,9 +142,9 @@ pub async fn add_reminder(
     let new_task = todoist::create_task(
         &state.todoist_client,
         NewTask {
-            content: decoded_response.title,
+            content: response.title,
             description: Some(description),
-            due_date: decoded_response.due,
+            due_date: response.due,
             ..Default::default()
         },
     )

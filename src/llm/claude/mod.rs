@@ -1,9 +1,15 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::http::HeaderValue;
 use reqwest::Client;
 use tracing::debug;
 
-use crate::claude::models::{MessageRequest, MessageResponse};
+use crate::llm::{
+    LLMProvider, PromptResponse,
+    claude::{
+        models::{InputMessage, MessageRequest, MessageResponse},
+        prompt::get_system_prompt,
+    },
+};
 
 pub struct ClaudeHttpClient {
     client: Client,
@@ -68,4 +74,35 @@ pub async fn message_create(
 
     let message_response: MessageResponse = serde_json::from_str(&text)?;
     Ok(message_response)
+}
+
+#[async_trait::async_trait]
+impl LLMProvider for ClaudeHttpClient {
+    async fn generate_reminder(&self, user_input: &str) -> Result<PromptResponse> {
+        debug!(
+            "Generating reminder from user input with Claude: {}",
+            user_input
+        );
+        let response = message_create(
+            self,
+            MessageRequest {
+                model: self.model.clone(),
+                messages: vec![InputMessage {
+                    role: "user".to_string(),
+                    content: format!(
+                        "Create a reminder to add to my to-do list from the following message: {}",
+                        user_input
+                    ),
+                }],
+                max_tokens: 1000,
+                system: Some(get_system_prompt()),
+            },
+        )
+        .await?;
+
+        let response_str: String = response.into();
+        debug!("Claude generated response: {}", response_str);
+
+        serde_json::from_str(&response_str).context("Failed to decode response from claude")
+    }
 }
