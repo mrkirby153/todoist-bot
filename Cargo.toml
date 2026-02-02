@@ -36,6 +36,7 @@ rustls = { version = "0.23.35", features = ["ring"] }
 time = { version = "0.3.46", features = ["formatting", "serde"] }
 iana-time-zone = "0.1.65"
 async-trait = "0.1.89"
+openai_api_rust = "0.1.9"
 
 
 [[bin]]

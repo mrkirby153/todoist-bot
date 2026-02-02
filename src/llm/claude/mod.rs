@@ -5,24 +5,23 @@ use tracing::debug;
 
 use crate::llm::{
     LLMProvider, PromptResponse,
-    claude::{
-        models::{InputMessage, MessageRequest, MessageResponse},
-        prompt::get_system_prompt,
-    },
+    claude::models::{InputMessage, MessageRequest, MessageResponse},
+    prompt::substitute_system_prompt,
 };
 
 pub struct ClaudeHttpClient {
     client: Client,
     pub model: String,
+    system_prompt: String,
 }
 
 pub mod models;
-pub mod prompt;
 
 const CLAUDE_API_BASE_URL: &str = "https://api.anthropic.com/v1";
+const DEFAULT_SYSTEM_PROMPT: &str = include_str!("system_prompt.txt");
 
 impl ClaudeHttpClient {
-    pub fn new(api_token: &str, model: &str) -> Self {
+    pub fn new(api_token: &str, model: &str, system_prompt: Option<String>) -> Self {
         let client = Client::builder()
             .user_agent("todoist-bot/0.1")
             .default_headers({
@@ -39,6 +38,7 @@ impl ClaudeHttpClient {
         Self {
             client,
             model: model.to_string(),
+            system_prompt: system_prompt.unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.to_string()),
         }
     }
 
@@ -95,7 +95,7 @@ impl LLMProvider for ClaudeHttpClient {
                     ),
                 }],
                 max_tokens: 1000,
-                system: Some(get_system_prompt()),
+                system: Some(substitute_system_prompt(&self.system_prompt)),
             },
         )
         .await?;

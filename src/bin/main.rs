@@ -8,6 +8,7 @@ use rustls::crypto::CryptoProvider;
 use thiserror::Error;
 use todoist_bot::llm::Provider;
 use todoist_bot::llm::claude::ClaudeHttpClient;
+use todoist_bot::llm::openai::OpenAIProvider;
 use todoist_bot::{AppState, interactions, retrieve_current_user, routes};
 use tokio::net::TcpListener;
 use tracing::info;
@@ -144,16 +145,29 @@ fn initialize_llm_provider() -> Result<Arc<Provider>> {
         .to_lowercase();
     match llm_provider.as_str() {
         "claude" => initialize_claude(),
+        "openai" => initialize_openapi(),
         other => Err(anyhow::anyhow!("Unsupported LLM provider: {}", other)),
     }
 }
 
 fn initialize_claude() -> Result<Arc<Provider>> {
+    info!("Using Claude LLM provider");
     let claude_token =
         env::var("CLAUDE_API_TOKEN").map_err(|_| MissingEnvironemntVariable::ClaudeApiToken)?;
     let claude_model = env::var("CLAUDE_MODEL").unwrap_or("claude-sonnet-4-5".to_string());
     info!("Using Claude model: {}", claude_model);
 
-    let claude_client = ClaudeHttpClient::new(&claude_token, &claude_model);
+    let system_prompt = env::var("CLAUDE_SYSTEM_PROMPT_PATH").ok().map(|path| {
+        info!("Using Claude system prompt from path: {}", path);
+        std::fs::read_to_string(path)
+            .expect("Failed to read Claude system prompt from specified path")
+    });
+
+    let claude_client = ClaudeHttpClient::new(&claude_token, &claude_model, system_prompt);
     Ok(Arc::new(claude_client))
+}
+
+fn initialize_openapi() -> Result<Arc<Provider>> {
+    info!("Using OpenAI LLM provider");
+    Ok(Arc::new(OpenAIProvider::new()?))
 }

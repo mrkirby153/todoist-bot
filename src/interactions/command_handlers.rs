@@ -74,7 +74,7 @@ pub async fn add_reminder(
         .generate_reminder(content.as_str())
         .await?;
 
-    debug!("DecLLModed response: {:#?}", response);
+    debug!("LLM response: {:#?}", response);
 
     if env::var("DRY_RUN").unwrap_or("false".to_string()) == "true" {
         debug!("Dry run enabled, not creating task in Todoist.");

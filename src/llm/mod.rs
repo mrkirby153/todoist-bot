@@ -1,4 +1,6 @@
 pub mod claude;
+pub mod openai;
+pub mod prompt;
 
 use anyhow::Result;
 use async_trait::async_trait;
